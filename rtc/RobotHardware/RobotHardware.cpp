@@ -243,6 +243,7 @@ RTC::ReturnCode_t RobotHardware::onExecute(RTC::UniqueId ec_id)
   if (m_qRefIn.isNew()){
       m_qRefIn.read();
       //std::cout << "RobotHardware: qRef[21] = " << m_qRef.data[21] << std::endl;
+#if 0
       if (!m_isDemoMode 
           && m_robot->checkJointCommands(m_qRef.data.get_buffer())){
           m_robot->servo("all", false);
@@ -252,6 +253,9 @@ RTC::ReturnCode_t RobotHardware::onExecute(RTC::UniqueId ec_id)
           // output to iob
           m_robot->writeJointCommands(m_qRef.data.get_buffer());
       }
+#else
+          m_robot->writeJointCommands(m_qRef.data.get_buffer());
+#endif
   }
   if (m_dqRefIn.isNew()){
       m_dqRefIn.read();
