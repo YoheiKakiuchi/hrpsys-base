@@ -1,28 +1,30 @@
 // -*- C++ -*-
 /*!
- * @file  OpenNIGrabber.h
- * @brief Moving Least Squares Filter
+ * @file  ObjectContactTurnaroundDetector.h
+ * @brief object contact turnaround detector component
  * @date  $Date$
  *
  * $Id$
  */
 
-#ifndef OPENNI_GRABBER_H
-#define OPENNI_GRABBER_H
+#ifndef OBJECTCONTACTTURNAROUNDDETECTOR_H
+#define OBJECTCONTACTTURNAROUNDDETECTOR_H
 
+#include <rtm/idl/BasicDataType.hh>
+#include <rtm/idl/ExtendedDataTypes.hh>
 #include <rtm/Manager.h>
 #include <rtm/DataFlowComponentBase.h>
 #include <rtm/CorbaPort.h>
 #include <rtm/DataInPort.h>
 #include <rtm/DataOutPort.h>
 #include <rtm/idl/BasicDataTypeSkel.h>
-#include <pcl/io/openni2_grabber.h>
-#include <pcl/io/pcd_io.h>
-#include "hrpsys/idl/pointcloud.hh"
-#include "hrpsys/idl/Img.hh"
-
+#include <rtm/idl/ExtendedDataTypesSkel.h>
+#include <hrpUtil/Eigen3d.h>
+#include <hrpModel/Body.h>
+#include "ObjectContactTurnaroundDetectorBase.h"
 // Service implementation headers
 // <rtc-template block="service_impl_h">
+#include "ObjectContactTurnaroundDetectorService_impl.h"
 
 // </rtc-template>
 
@@ -33,30 +35,20 @@
 
 using namespace RTC;
 
-/**
-   \brief sample RT component which has one data input port and one data output port
- */
-class OpenNIGrabber
+class ObjectContactTurnaroundDetector
   : public RTC::DataFlowComponentBase
 {
  public:
-  /**
-     \brief Constructor
-     \param manager pointer to the Manager
-  */
-  OpenNIGrabber(RTC::Manager* manager);
-  /**
-     \brief Destructor
-  */
-  virtual ~OpenNIGrabber();
+  ObjectContactTurnaroundDetector(RTC::Manager* manager);
+  virtual ~ObjectContactTurnaroundDetector();
 
   // The initialize action (on CREATED->ALIVE transition)
   // formaer rtc_init_entry()
-  virtual RTC::ReturnCode_t onInitialize();
+ virtual RTC::ReturnCode_t onInitialize();
 
   // The finalize action (on ALIVE->END transition)
   // formaer rtc_exiting_entry()
-  // virtual RTC::ReturnCode_t onFinalize();
+  virtual RTC::ReturnCode_t onFinalize();
 
   // The startup action when ExecutionContext startup
   // former rtc_starting_entry()
@@ -98,6 +90,11 @@ class OpenNIGrabber
   // no corresponding operation exists in OpenRTm-aist-0.2.0
   // virtual RTC::ReturnCode_t onRateChanged(RTC::UniqueId ec_id);
 
+  void startObjectContactTurnaroundDetection(const double i_ref_diff_wrench, const double i_max_time, const OpenHRP::ObjectContactTurnaroundDetectorService::StrSequence& i_ee_names);
+  OpenHRP::ObjectContactTurnaroundDetectorService::DetectorMode checkObjectContactTurnaroundDetection();
+  bool setObjectContactTurnaroundDetectorParam(const OpenHRP::ObjectContactTurnaroundDetectorService::objectContactTurnaroundDetectorParam &i_param_);
+  bool getObjectContactTurnaroundDetectorParam(OpenHRP::ObjectContactTurnaroundDetectorService::objectContactTurnaroundDetectorParam& i_param_);
+  bool getObjectForcesMoments(OpenHRP::ObjectContactTurnaroundDetectorService::Dbl3Sequence_out o_forces, OpenHRP::ObjectContactTurnaroundDetectorService::Dbl3Sequence_out o_moments, OpenHRP::ObjectContactTurnaroundDetectorService::DblSequence3_out o_3dofwrench);
 
  protected:
   // Configuration variable declaration
@@ -105,31 +102,34 @@ class OpenNIGrabber
   
   // </rtc-template>
 
-  Img::TimedCameraImage m_image;
-  Img::TimedCameraImage m_depth;
-  PointCloudTypes::PointCloud m_cloud;
-
   // DataInPort declaration
   // <rtc-template block="inport_declare">
+  TimedDoubleSeq m_qCurrent;
+  InPort<TimedDoubleSeq> m_qCurrentIn;
+  std::vector<TimedDoubleSeq> m_force;
+  std::vector<InPort<TimedDoubleSeq> *> m_forceIn;
+  TimedOrientation3D m_rpy;
+  InPort<TimedOrientation3D> m_rpyIn;
   
   // </rtc-template>
 
   // DataOutPort declaration
   // <rtc-template block="outport_declare">
-  OutPort<PointCloudTypes::PointCloud> m_cloudOut;
-  OutPort<Img::TimedCameraImage> m_imageOut;
-  OutPort<Img::TimedCameraImage> m_depthOut;
+  TimedDoubleSeq m_otdData;
+  OutPort<TimedDoubleSeq> m_otdDataOut;
   
   // </rtc-template>
 
   // CORBA Port declaration
   // <rtc-template block="corbaport_declare">
-  
+  RTC::CorbaPort m_ObjectContactTurnaroundDetectorServicePort;
+
   // </rtc-template>
 
   // Service declaration
   // <rtc-template block="service_declare">
-  
+  ObjectContactTurnaroundDetectorService_impl m_service0;
+
   // </rtc-template>
 
   // Consumer declaration
@@ -138,29 +138,33 @@ class OpenNIGrabber
   // </rtc-template>
 
  private:
-  void grabberCallbackColorImage(const boost::shared_ptr<pcl::io::Image>& image);
-  void grabberCallbackDepthImage(const boost::shared_ptr<pcl::io::DepthImage>& image);
-  void grabberCallbackColorAndDepthImage(const boost::shared_ptr<pcl::io::Image>& image, const boost::shared_ptr<pcl::io::DepthImage>& depth, float reciprocalFocalLength);
-  void grabberCallbackPointCloudRGBA(const pcl::PointCloud<pcl::PointXYZRGBA>::ConstPtr &cloud);
-  void grabberCallbackPointCloud(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud);
-  void outputColorImage(const boost::shared_ptr<pcl::io::Image>& image);
-  void outputDepthImage(const boost::shared_ptr<pcl::io::DepthImage>& image);
 
-  pcl::Grabber *m_interface;
-  int m_debugLevel;
-  bool m_outputColorImage;
-  bool m_outputDepthImage;
-  bool m_outputPointCloud;
-  bool m_outputPointCloudRGBA;
-  bool m_requestToWriteImage;
-  bool m_requestToWritePointCloud;
+  struct ee_trans {
+    std::string target_name, sensor_name;
+    hrp::Vector3 localPos;
+    hrp::Matrix33 localR;
+  };
+
+  void updateRootLinkPosRot (TimedOrientation3D tmprpy);
+  void calcFootMidCoords (hrp::Vector3& new_foot_mid_pos, hrp::Matrix33& new_foot_mid_rot);
+  void calcObjectContactTurnaroundDetectorState();
+
+  std::map<std::string, ee_trans> ee_map;
+  boost::shared_ptr<ObjectContactTurnaroundDetectorBase > otd;
+  std::vector<std::string> otd_sensor_names;
+  hrp::Vector3 otd_axis;
+  double m_dt;
+  hrp::BodyPtr m_robot;
+  coil::Mutex m_mutex;
+  unsigned int m_debugLevel;
   int dummy;
+  int loop;
 };
 
 
 extern "C"
 {
-  void OpenNIGrabberInit(RTC::Manager* manager);
+  void ObjectContactTurnaroundDetectorInit(RTC::Manager* manager);
 };
 
-#endif // OPENNI_GRABBER_H
+#endif // OBJECTCONTACTTURNAROUNDDETECTOR_H
