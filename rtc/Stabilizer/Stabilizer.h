@@ -282,12 +282,13 @@ class Stabilizer
   hrp::dvector transition_joint_q, qorg, qrefv;
   std::vector<STIKParam> stikp;
   std::map<std::string, size_t> contact_states_index_map;
-  std::vector<bool> contact_states, prev_contact_states, is_ik_enable, is_feedback_control_enable, is_zmp_calc_enable;
+  std::vector<bool> ref_contact_states, prev_ref_contact_states, act_contact_states, is_ik_enable, is_feedback_control_enable, is_zmp_calc_enable;
   std::vector<double> toeheel_ratio;
   double dt;
   int transition_count, loop;
   int m_is_falling_counter;
   std::vector<int> m_will_fall_counter;
+  int is_air_counter, detection_count_to_air;
   bool is_legged_robot, on_ground, is_emergency, is_seq_interpolating, reset_emergency_flag, eefm_use_force_difference_control, eefm_use_swing_damping, initial_cp_too_large_error, use_limb_stretch_avoidance;
   bool is_walking, is_estop_while_walking;
   hrp::Vector3 current_root_p, target_root_p;

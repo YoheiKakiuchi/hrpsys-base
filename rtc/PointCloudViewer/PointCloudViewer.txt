@@ -1,13 +1,13 @@
 /**
 
-\page CameraImageViewer
+\page PointCloudViewer
 
 \section introduction Overview
 
-This component visualizes Img::TimedCameraImage
+This component visualizes point clouds
 
 <table>
-<tr><th>implementation_id</th><td>CameraImageViewer</td></tr>
+<tr><th>implementation_id</th><td>PointCloudViewer</td></tr>
 <tr><th>category</th><td>example</td></tr>
 </table>
 
@@ -17,18 +17,22 @@ This component visualizes Img::TimedCameraImage
 
 <table>
 <tr><th>port name</th><th>data type</th><th>unit</th><th>description</th></tr>
-<tr><td>imageIn</td><td>Img::TimedCameraImage</td><td></td><td>camera image</td></tr>
+<tr><td>cloud</td><td>PointCloudTypes::PointCloud</td><td></td><td></td></tr>
 </table>
 
 \subsection outports Output Ports
 
-N/A
+<table>
+<tr><th>port name</th><th>data type</th><th>unit</th><th>description</th></tr>
+</table>
 
 \section serviceports Service Ports
 
 \subsection provider Service Providers
 
-N/A
+<table>
+<tr><th>port name</th><th>interface name</th><th>service type</th><th>IDL</th><th>description</th></tr>
+</table>
 
 \subsection consumer Service Consumers
 
@@ -38,7 +42,6 @@ N/A
 
 <table>
 <tr><th>name</th><th>type</th><th>unit</th><th>default value</th><th>description</th></tr>
-<tr><td>depthBits</td><td>int</td><td>[bit]</td><td>11</td><td>resolution of depth image</td></tr>
 </table>
 
 \section conf Configuration File

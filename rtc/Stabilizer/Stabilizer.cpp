@@ -397,6 +397,7 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
   limb_stretch_avoidance_time_const = 1.5;
   limb_stretch_avoidance_vlimit[0] = -100 * 1e-3 * dt; // lower limit
   limb_stretch_avoidance_vlimit[1] = 50 * 1e-3 * dt; // upper limit
+  detection_count_to_air = static_cast<int>(0.0 / dt);
 
   // parameters for RUNST
   double ke = 0, tc = 0;
@@ -431,13 +432,15 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
   transition_count = 0;
   loop = 0;
   m_is_falling_counter = 0;
+  is_air_counter = 0;
   total_mass = m_robot->totalMass();
   ref_zmp_aux = hrp::Vector3::Zero();
   m_actContactStates.data.length(m_contactStates.data.length());
   for (size_t i = 0; i < m_contactStates.data.length(); i++) {
-    contact_states.push_back(true);
-    prev_contact_states.push_back(true);
+    ref_contact_states.push_back(true);
+    prev_ref_contact_states.push_back(true);
     m_actContactStates.data[i] = false;
+    act_contact_states.push_back(false);
     toeheel_ratio.push_back(1.0);
   }
   m_COPInfo.data.length(m_contactStates.data.length()*3); // nx, ny, fz for each end-effectors
@@ -552,7 +555,7 @@ RTC::ReturnCode_t Stabilizer::onExecute(RTC::UniqueId ec_id)
   if (m_contactStatesIn.isNew()){
     m_contactStatesIn.read();
     for (size_t i = 0; i < m_contactStates.data.length(); i++) {
-      contact_states[i] = m_contactStates.data[i];
+      ref_contact_states[i] = m_contactStates.data[i];
     }
   }
   if (m_toeheelRatioIn.isNew()){
@@ -616,7 +619,10 @@ RTC::ReturnCode_t Stabilizer::onExecute(RTC::UniqueId ec_id)
       } else {
         calcTPCC();
       }
-      if ( transition_count == 0 && !on_ground ) control_mode = MODE_SYNC_TO_AIR;
+      if ( transition_count == 0 && !on_ground ) {
+          if (is_air_counter < detection_count_to_air) ++is_air_counter;
+          else control_mode = MODE_SYNC_TO_AIR;
+      } else is_air_counter = 0;
       break;
     case MODE_SYNC_TO_IDLE:
       sync_2_idle();
@@ -747,12 +753,12 @@ void Stabilizer::calcFootOriginCoords (hrp::Vector3& foot_origin_pos, hrp::Matri
     leg_c[i].rot(0,1) = yv1(0); leg_c[i].rot(1,1) = yv1(1); leg_c[i].rot(2,1) = yv1(2);
     leg_c[i].rot(0,2) = ez(0); leg_c[i].rot(1,2) = ez(1); leg_c[i].rot(2,2) = ez(2);
   }
-  if (contact_states[contact_states_index_map["rleg"]] &&
-      contact_states[contact_states_index_map["lleg"]]) {
+  if (ref_contact_states[contact_states_index_map["rleg"]] &&
+      ref_contact_states[contact_states_index_map["lleg"]]) {
     rats::mid_coords(tmpc, 0.5, leg_c[0], leg_c[1]);
     foot_origin_pos = tmpc.pos;
     foot_origin_rot = tmpc.rot;
-  } else if (contact_states[contact_states_index_map["rleg"]]) {
+  } else if (ref_contact_states[contact_states_index_map["rleg"]]) {
     foot_origin_pos = leg_c[contact_states_index_map["rleg"]].pos;
     foot_origin_rot = leg_c[contact_states_index_map["rleg"]].rot;
   } else {
@@ -802,7 +808,9 @@ void Stabilizer::getActualParameters ()
   // set actual contact states
   for (size_t i = 0; i < stikp.size(); i++) {
       std::string limb_name = stikp[i].ee_name;
-      m_actContactStates.data[contact_states_index_map[limb_name]] = isContact(contact_states_index_map[limb_name]);
+      size_t idx = contact_states_index_map[limb_name];
+      act_contact_states[idx] = isContact(idx);
+      m_actContactStates.data[idx] = act_contact_states[idx];
   }
   // <= Actual world frame
 
@@ -813,7 +821,7 @@ void Stabilizer::getActualParameters ()
     act_zmp = foot_origin_rot.transpose() * (act_zmp - foot_origin_pos);
     act_cog = foot_origin_rot.transpose() * (act_cog - foot_origin_pos);
     //act_cogvel = foot_origin_rot.transpose() * act_cogvel;
-    if (contact_states != prev_contact_states) {
+    if (ref_contact_states != prev_ref_contact_states) {
       act_cogvel = (foot_origin_rot.transpose() * prev_act_foot_origin_rot) * act_cogvel;
     } else {
       act_cogvel = (act_cog - prev_act_cog)/dt;
@@ -890,7 +898,7 @@ void Stabilizer::getActualParameters ()
           rel_ee_pos.push_back(foot_origin_rot.transpose() * (ee_pos.back() - foot_origin_pos));
           rel_ee_rot.push_back(foot_origin_rot.transpose() * ee_rot.back());
           rel_ee_name.push_back(ee_name.back());
-          is_contact_list.push_back(isContact(i));
+          is_contact_list.push_back(act_contact_states[i]);
           // std::cerr << ee_forcemoment_distribution_weight[i] << std::endl;
           ee_forcemoment_distribution_weight.push_back(hrp::dvector6::Zero(6,1));
           for (size_t j = 0; j < 6; j++) {
@@ -975,8 +983,8 @@ void Stabilizer::getActualParameters ()
         ee_moment = foot_origin_rot.transpose() * ee_moment;
         if ( i == 0 ) f_diff += -1*sensor_force;
         else f_diff += sensor_force;
-        if ((!contact_states[i] || !isContact(i)) && fabs(ikp.ref_force(2) - sensor_force(2)) > eefm_swing_damping_force_thre) large_swing_f_diff = true;
-        if ((!contact_states[i] || !isContact(i)) && (fabs(ikp.ref_moment(0) - ee_moment(0)) > eefm_swing_damping_moment_thre || fabs(ikp.ref_moment(1) - ee_moment(1)) > eefm_swing_damping_moment_thre)) large_swing_m_diff = true;
+        if ((!ref_contact_states[i] || !act_contact_states[i]) && fabs(ikp.ref_force(2) - sensor_force(2)) > eefm_swing_damping_force_thre) large_swing_f_diff = true;
+        if ((!ref_contact_states[i] || !act_contact_states[i]) && (fabs(ikp.ref_moment(0) - ee_moment(0)) > eefm_swing_damping_moment_thre || fabs(ikp.ref_moment(1) - ee_moment(1)) > eefm_swing_damping_moment_thre)) large_swing_m_diff = true;
         // Moment limitation
         hrp::Matrix33 ee_R(target->R * ikp.localR);
         ikp.ref_moment = ee_R * vlimit((ee_R.transpose() * ikp.ref_moment), ikp.eefm_ee_moment_limit);
@@ -1021,15 +1029,15 @@ void Stabilizer::getActualParameters ()
             pos_ctrl = calcDampingControl (ref_f_diff, f_diff, pos_ctrl,
                                            tmp_damping_gain, stikp[0].eefm_pos_time_const_support);
           } else {
-            if ( (contact_states[contact_states_index_map["rleg"]] && contact_states[contact_states_index_map["lleg"]]) // Reference : double support phase
-                 || (isContact(0) && isContact(1)) ) { // Actual : double support phase
+            if ( (ref_contact_states[contact_states_index_map["rleg"]] && ref_contact_states[contact_states_index_map["lleg"]]) // Reference : double support phase
+                 || (act_contact_states[0] && act_contact_states[1]) ) { // Actual : double support phase
               // Temporarily use first pos damping gain (stikp[0])
               hrp::Vector3 tmp_damping_gain = (1-transition_smooth_gain) * stikp[0].eefm_pos_damping_gain * 10 + transition_smooth_gain * stikp[0].eefm_pos_damping_gain;
               pos_ctrl = calcDampingControl (ref_f_diff, f_diff, pos_ctrl,
                                              tmp_damping_gain, stikp[0].eefm_pos_time_const_support);
             } else {
               double remain_swing_time;
-              if ( !contact_states[contact_states_index_map["rleg"]] ) { // rleg swing
+              if ( !ref_contact_states[contact_states_index_map["rleg"]] ) { // rleg swing
                   remain_swing_time = m_controlSwingSupportTime.data[contact_states_index_map["rleg"]];
               } else { // lleg swing
                   remain_swing_time = m_controlSwingSupportTime.data[contact_states_index_map["lleg"]];
@@ -1090,7 +1098,7 @@ void Stabilizer::getActualParameters ()
     m_robot->rootLink()->R = current_root_R;
     m_robot->calcForwardKinematics();
   }
-  copy (contact_states.begin(), contact_states.end(), prev_contact_states.begin());
+  copy (ref_contact_states.begin(), ref_contact_states.end(), prev_ref_contact_states.begin());
 }
 
 void Stabilizer::getTargetParameters ()
@@ -1172,7 +1180,7 @@ void Stabilizer::getTargetParameters ()
     ref_zmp = foot_origin_rot.transpose() * (ref_zmp - foot_origin_pos);
     ref_cog = foot_origin_rot.transpose() * (ref_cog - foot_origin_pos);
     new_refzmp = foot_origin_rot.transpose() * (new_refzmp - foot_origin_pos);
-    if (contact_states != prev_contact_states) {
+    if (ref_contact_states != prev_ref_contact_states) {
       ref_cogvel = (foot_origin_rot.transpose() * prev_ref_foot_origin_rot) * ref_cogvel;
     } else {
       ref_cogvel = (ref_cog - prev_ref_cog)/dt;
@@ -1284,9 +1292,9 @@ void Stabilizer::calcStateForEmergencySignal()
     for (size_t i = 0; i < 2; i++) {
       tmp_cp(i) = act_cp(i);
     }
-    if (isContact(contact_states_index_map["rleg"]) && isContact(contact_states_index_map["lleg"])) support_leg = SimpleZMPDistributor::BOTH;
-    else if (isContact(contact_states_index_map["rleg"])) support_leg = SimpleZMPDistributor::RLEG;
-    else if (isContact(contact_states_index_map["lleg"])) support_leg = SimpleZMPDistributor::LLEG;
+    if (act_contact_states[contact_states_index_map["rleg"]] && act_contact_states[contact_states_index_map["lleg"]]) support_leg = SimpleZMPDistributor::BOTH;
+    else if (act_contact_states[contact_states_index_map["rleg"]]) support_leg = SimpleZMPDistributor::RLEG;
+    else if (act_contact_states[contact_states_index_map["lleg"]]) support_leg = SimpleZMPDistributor::LLEG;
     if (!is_walking || is_estop_while_walking) is_cp_outside = !szd->is_inside_support_polygon(tmp_cp, rel_ee_pos, rel_ee_rot, rel_ee_name, support_leg, cp_check_margin, - sbp_cog_offset);
     if (DEBUGP) {
       std::cerr << "[" << m_profile.instance_name << "] CP value " << "[" << act_cp(0) << "," << act_cp(1) << "] [m], "
@@ -1327,7 +1335,7 @@ void Stabilizer::calcStateForEmergencySignal()
                       if (m_will_fall_counter[i] % static_cast <int>(1.0/dt) == 0 ) { // once per 1.0[s]
                           std::cerr << "[" << m_profile.instance_name << "] [" << m_qRef.tm
                                     << "] " << stikp[i].ee_name << " cannot support total weight, "
-                                    << "swgsuptime : " << m_controlSwingSupportTime.data[i] << ", state : " << contact_states[i]
+                                    << "swgsuptime : " << m_controlSwingSupportTime.data[i] << ", state : " << ref_contact_states[i]
                                     << ", otherwise robot will fall down toward " << "(" << projected_normal.at(i)(0) << "," << projected_normal.at(i)(1) << ") direction" << std::endl;
                       }
                       m_will_fall_counter[i]++;
@@ -1402,7 +1410,7 @@ void Stabilizer::calcSwingSupportLimbGain ()
 {
     for (size_t i = 0; i < stikp.size(); i++) {
         STIKParam& ikp = stikp[i];
-        if (contact_states[i]) { // Support
+        if (ref_contact_states[i]) { // Support
             ikp.support_time += dt;
             if (ikp.support_time > eefm_pos_transition_time) {
                 ikp.swing_support_gain = (m_controlSwingSupportTime.data[i] / eefm_pos_transition_time);
@@ -1418,8 +1426,8 @@ void Stabilizer::calcSwingSupportLimbGain ()
     if (DEBUGP) {
         std::cerr << "[" << m_profile.instance_name << "] SwingSupportLimbGain = [";
         for (size_t i = 0; i < stikp.size(); i++) std::cerr << stikp[i].swing_support_gain << " ";
-        std::cerr << "], contact_states = [";
-        for (size_t i = 0; i < stikp.size(); i++) std::cerr << contact_states[i] << " ";
+        std::cerr << "], ref_contact_states = [";
+        for (size_t i = 0; i < stikp.size(); i++) std::cerr << ref_contact_states[i] << " ";
         std::cerr << "], sstime = [";
         for (size_t i = 0; i < stikp.size(); i++) std::cerr << m_controlSwingSupportTime.data[i] << " ";
         std::cerr << "], toeheel_ratio = [";
@@ -1587,7 +1595,7 @@ void Stabilizer::calcSwingEEModification ()
         // Calc compensation values
         double limit_pos = 30 * 1e-3; // 30[mm] limit
         double limit_rot = deg2rad(10); // 10[deg] limit
-        if (contact_states[contact_states_index_map[stikp[i].ee_name]] || isContact(contact_states_index_map[stikp[i].ee_name])) {
+        if (ref_contact_states[contact_states_index_map[stikp[i].ee_name]] || act_contact_states[contact_states_index_map[stikp[i].ee_name]]) {
             // If actual contact or target contact is ON, do not use swing ee compensation. Exponential zero retrieving.
             stikp[i].d_rpy_swing = calcDampingControl(stikp[i].d_rpy_swing, stikp[i].eefm_swing_rot_time_const);
             stikp[i].d_pos_swing = calcDampingControl(stikp[i].d_pos_swing, stikp[i].eefm_swing_pos_time_const);
@@ -1920,6 +1928,7 @@ void Stabilizer::getParameter(OpenHRP::StabilizerService::stParam& i_stp)
   i_stp.use_limb_stretch_avoidance = use_limb_stretch_avoidance;
   i_stp.limb_stretch_avoidance_time_const = limb_stretch_avoidance_time_const;
   i_stp.limb_length_margin.length(stikp.size());
+  i_stp.detection_time_to_air = detection_count_to_air * dt;
   for (size_t i = 0; i < 2; i++) {
     i_stp.limb_stretch_avoidance_vlimit[i] = limb_stretch_avoidance_vlimit[i];
   }
@@ -2096,6 +2105,7 @@ void Stabilizer::setParameter(const OpenHRP::StabilizerService::stParam& i_stp)
   for (size_t i = 0; i < 2; i++) {
     limb_stretch_avoidance_vlimit[i] = i_stp.limb_stretch_avoidance_vlimit[i];
   }
+  detection_count_to_air = static_cast<int>(i_stp.detection_time_to_air / dt);
   if (control_mode == MODE_IDLE) {
       for (size_t i = 0; i < i_stp.end_effector_list.length(); i++) {
           std::vector<STIKParam>::iterator it = std::find_if(stikp.begin(), stikp.end(), (&boost::lambda::_1->* &std::vector<STIKParam>::value_type::ee_name == std::string(i_stp.end_effector_list[i].leg)));
@@ -2175,6 +2185,7 @@ void Stabilizer::setParameter(const OpenHRP::StabilizerService::stParam& i_stp)
   std::cerr << "[" << m_profile.instance_name << "]  cp_check_margin = [" << cp_check_margin[0] << ", " << cp_check_margin[1] << ", " << cp_check_margin[2] << ", " << cp_check_margin[3] << "] [m]" << std::endl;
   std::cerr << "[" << m_profile.instance_name << "]  tilt_margin = [" << tilt_margin[0] << ", " << tilt_margin[1] << "] [rad]" << std::endl;
   std::cerr << "[" << m_profile.instance_name << "]  contact_decision_threshold = " << contact_decision_threshold << "[N]" << std::endl;
+  std::cerr << "[" << m_profile.instance_name << "]  detection_time_to_air = " << detection_count_to_air * dt << "[s]" << std::endl;
   // IK limb parameters
   std::cerr << "[" << m_profile.instance_name << "]  IK limb parameters" << std::endl;
   bool is_ik_limb_parameter_valid_length = true;
@@ -2310,7 +2321,7 @@ void Stabilizer::setBoolSequenceParamWithCheckContact (std::vector<bool>& st_boo
     std::vector<size_t> failed_indices;
     for (size_t i = 0; i < st_bool_values.size(); i++) {
       if ( (st_bool_values[i] != output_bool_values[i]) ) { // If mode change
-        if (!contact_states[i] ) { // reference contact_states should be OFF
+        if (!ref_contact_states[i] ) { // reference contact_states should be OFF
           st_bool_values[i] = output_bool_values[i];
         } else {
           failed_indices.push_back(i);

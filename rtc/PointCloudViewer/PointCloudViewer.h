@@ -1,25 +1,24 @@
 // -*- C++ -*-
 /*!
- * @file  OpenNIGrabber.h
- * @brief Moving Least Squares Filter
+ * @file  PointCloudViewer.h
+ * @brief Point Cloud Viewer
  * @date  $Date$
  *
  * $Id$
  */
 
-#ifndef OPENNI_GRABBER_H
-#define OPENNI_GRABBER_H
+#ifndef POINT_CLOUD_VIEWER_H
+#define POINT_CLOUD_VIEWER_H
 
+#include <rtm/idl/BasicDataType.hh>
+#include "hrpsys/idl/pointcloud.hh"
 #include <rtm/Manager.h>
 #include <rtm/DataFlowComponentBase.h>
 #include <rtm/CorbaPort.h>
 #include <rtm/DataInPort.h>
 #include <rtm/DataOutPort.h>
 #include <rtm/idl/BasicDataTypeSkel.h>
-#include <pcl/io/openni2_grabber.h>
-#include <pcl/io/pcd_io.h>
-#include "hrpsys/idl/pointcloud.hh"
-#include "hrpsys/idl/Img.hh"
+#include <pcl/visualization/cloud_viewer.h>
 
 // Service implementation headers
 // <rtc-template block="service_impl_h">
@@ -36,7 +35,7 @@ using namespace RTC;
 /**
    \brief sample RT component which has one data input port and one data output port
  */
-class OpenNIGrabber
+class PointCloudViewer
   : public RTC::DataFlowComponentBase
 {
  public:
@@ -44,11 +43,11 @@ class OpenNIGrabber
      \brief Constructor
      \param manager pointer to the Manager
   */
-  OpenNIGrabber(RTC::Manager* manager);
+  PointCloudViewer(RTC::Manager* manager);
   /**
      \brief Destructor
   */
-  virtual ~OpenNIGrabber();
+  virtual ~PointCloudViewer();
 
   // The initialize action (on CREATED->ALIVE transition)
   // formaer rtc_init_entry()
@@ -105,20 +104,16 @@ class OpenNIGrabber
   
   // </rtc-template>
 
-  Img::TimedCameraImage m_image;
-  Img::TimedCameraImage m_depth;
   PointCloudTypes::PointCloud m_cloud;
 
   // DataInPort declaration
   // <rtc-template block="inport_declare">
+  InPort<PointCloudTypes::PointCloud> m_cloudIn;
   
   // </rtc-template>
 
   // DataOutPort declaration
   // <rtc-template block="outport_declare">
-  OutPort<PointCloudTypes::PointCloud> m_cloudOut;
-  OutPort<Img::TimedCameraImage> m_imageOut;
-  OutPort<Img::TimedCameraImage> m_depthOut;
   
   // </rtc-template>
 
@@ -138,29 +133,14 @@ class OpenNIGrabber
   // </rtc-template>
 
  private:
-  void grabberCallbackColorImage(const boost::shared_ptr<pcl::io::Image>& image);
-  void grabberCallbackDepthImage(const boost::shared_ptr<pcl::io::DepthImage>& image);
-  void grabberCallbackColorAndDepthImage(const boost::shared_ptr<pcl::io::Image>& image, const boost::shared_ptr<pcl::io::DepthImage>& depth, float reciprocalFocalLength);
-  void grabberCallbackPointCloudRGBA(const pcl::PointCloud<pcl::PointXYZRGBA>::ConstPtr &cloud);
-  void grabberCallbackPointCloud(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud);
-  void outputColorImage(const boost::shared_ptr<pcl::io::Image>& image);
-  void outputDepthImage(const boost::shared_ptr<pcl::io::DepthImage>& image);
-
-  pcl::Grabber *m_interface;
-  int m_debugLevel;
-  bool m_outputColorImage;
-  bool m_outputDepthImage;
-  bool m_outputPointCloud;
-  bool m_outputPointCloudRGBA;
-  bool m_requestToWriteImage;
-  bool m_requestToWritePointCloud;
+  pcl::visualization::CloudViewer m_viewer;
   int dummy;
 };
 
 
 extern "C"
 {
-  void OpenNIGrabberInit(RTC::Manager* manager);
+  void PointCloudViewerInit(RTC::Manager* manager);
 };
 
-#endif // OPENNI_GRABBER_H
+#endif // POINT_CLOUD_VIEWER_H
