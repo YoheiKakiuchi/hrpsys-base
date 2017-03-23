@@ -19,6 +19,7 @@ if(NOT (${CMAKE_SYSTEM_PROCESSOR} MATCHES amd64* OR
 ## only for 32bit system
 set_source_files_properties(${vclip_sources} PROPERTIES COMPILE_FLAGS -ffloat-store)
 endif()
+link_directories(${fcl_LIBRARY_DIRS})
 include_directories(${LIBXML2_INCLUDE_DIR} ${QHULL_INCLUDE_DIR} ${seq_dir} ${fcl_INCLUDE_DIR})
 add_library(CollisionDetector SHARED ${comp_sources})
 if (USE_HRPSYSUTIL)
@@ -35,6 +36,7 @@ else ()
   target_link_libraries(CollisionDetectorComp ${QHULL_LIBRARIES} ${libs} ${fcl_LIBRARIES})
 endif()
 
+#### TODO: SetupCollisionPair with FCL
 #add_executable(SetupCollisionPair SetupCollisionPair.cpp)
 #target_link_libraries(SetupCollisionPair CollisionDetector ${OPENHRP_LIBRARIES} ${QHULL_LIBRARIES})
 
@@ -42,9 +44,11 @@ if (USE_HRPSYSUTIL)
   add_executable(CollisionDetectorViewer CollisionDetectorViewer.cpp GLscene.cpp)
   target_link_libraries(CollisionDetectorViewer hrpsysUtil)
   set_target_properties (CollisionDetectorViewer PROPERTIES COMPILE_DEFINITIONS "USE_COLLISION_STATE")
-  set(target CollisionDetector CollisionDetectorComp SetupCollisionPair CollisionDetectorViewer)
+#  set(target CollisionDetector CollisionDetectorComp SetupCollisionPair CollisionDetectorViewer)
+   set(target CollisionDetector CollisionDetectorComp CollisionDetectorViewer)
 else()
-  set(target CollisionDetector CollisionDetectorComp SetupCollisionPair)
+#  set(target CollisionDetector CollisionDetectorComp SetupCollisionPair)
+   set(target CollisionDetector CollisionDetectorComp)
 endif()
 
 install(TARGETS ${target}
