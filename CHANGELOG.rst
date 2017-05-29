@@ -2,6 +2,145 @@
 Changelog for package hrpsys
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+315.13.0 (2017-05-19)
+---------------------
+
+Stable RTCs
+=============
+
+* Update for beeping of SoftErrorLimiter and CollisionDetector (`#1124 <https://github.com/fkanehiro/hrpsys-base/issues/1124>`_)
+  * [rtc/SoftErrorLimiter/SoftErrorLimiter.cpp,rtc/CollisionDetector/CollisionDetector.cpp] Call quit_beep when is_beep_port_connected is true, because beeping is not required in these RTCs and deregated to Beeper RTC in this case.
+
+* Update documentations of python interfaces for stable rtcs (`#1120 <https://github.com/fkanehiro/hrpsys-base/issues/1120>`_)
+  * [doc][py] Explain setWrenches method (thanks to https://github.com/fkanehiro/hrpsys-base/issues/1131).
+    Similar info should be added to IDL level (this Python file is only the end-user API so the number of audience can be minimum).
+  * [py][doc] Add how to set ref\_{force, moment} for 315.2.0 <= version.
+  * [doc][py] More elaboration on startImpedance.
+  * [py] Elaborate the "tm" arg.
+   AFAI understood from looking at [SequencePlayer/SequencePlayer.cpp](https://github.com/fkanehiro/hrpsys-base/blob/350a3bcdeafd39d82a44c2dbde6a279adb6d88eb/rtc/SequencePlayer/SequencePlayer.cpp#L547)'s implementation, time taken for planning and other processes are not considered for "`tm`" argument.
+  * [doc][py] Elaborate playPattern* methods.
+
+* hrpsys-simulator
+  * set default background color of hrpsys-viewer
+
+* Update CMake for VTK (`#1123 <https://github.com/fkanehiro/hrpsys-base/issues/1123>`_)
+  * Precise the version of VTK
+    There seems to be an incompatibility between the version 5.8 and the version 7
+
+Unstable RTCs
+=============
+* Update Unstable RTC sample, readme, and images (`#1126 <https://github.com/fkanehiro/hrpsys-base/issues/1126>`_, `#1127 <https://github.com/fkanehiro/hrpsys-base/issues/1127>`_)
+  * [sample/SampleRobot/README.md] Fix path of images of README
+  * [sample/SampleRobot/README.md, img] Add image and update link for hrpsys sample README
+  * [sample/SampleRobot/samplerobot_terrain_walk.py] Update terrain walk samples
+  * [sample/SampleRobot/SampleRobot.DRCTestbed.xml] Update DRC testbed xml to add floor.
+  * [sample/README.md, SampleRobot/README.md] Update README to fix indent and alignment.
+
+* Update Stabilizer (`#1125 <https://github.com/fkanehiro/hrpsys-base/issues/1125>`_, `#1128 <https://github.com/fkanehiro/hrpsys-base/issues/1128>`_, `#1137 <https://github.com/fkanehiro/hrpsys-base/issues/1137>`_)
+  * Update Stabilizer-related codes and samples (`#1125 <https://github.com/fkanehiro/hrpsys-base/issues/1125>`_)
+    * [sample/SampleRobot/samplerobot_stabilizer.py] Add new sample for st for root rot change and mimic rough terrain.
+    * [rtc/PDcontroller/PDcontroller.cpp] Print PD gain when loading
+    * [rtc/Stabilizer/Stabilizer.*] Remove unused parameters.
+  * Update damping control in horizontal direction (`#1128 <https://github.com/fkanehiro/hrpsys-base/issues/1128>`_)
+    * [Stabilizer] Enable to change horizontal swing damping gain when detect large force/moment
+  * IK loop and base rot control (`#1137 <https://github.com/fkanehiro/hrpsys-base/issues/1137>`_)
+    * [rtc/Stabilizer/Stabilizer.* idl/StabilizerService.idl] Enable to set ik_loop_count in st
+    * [rtc/Stabilizer/ZMPDistributor.h, Stabilizer.cpp] Reduce lines of printing of stabilizer.
+    * [idl/StabilizerService.idl, rtc/Stabilizer] Enable to set Limit of compensation for difference between ref-act root rot [rad].
+
+* Add new functionality for walking (`#1129 <https://github.com/fkanehiro/hrpsys-base/issues/1129>`_, `#1134 <https://github.com/fkanehiro/hrpsys-base/issues/1134>`_)
+  * Modify footsteps to keep balance (`#1129 <https://github.com/fkanehiro/hrpsys-base/issues/1129>`_)
+    * [AutoBalancerService.idl, StabilizerService.idl, hrpsys_config.py, AutoBalancer.*, AutoBalancer.*, Stabilizer.*] modify footsteps based on CP
+    * [AutoBalancerService.idl, AutoBalancer.cpp, GaitGenerator.*, sample/SampleRobot/samplerobot_auto_balancer.py] use different parameter when generating footsteps with circle type
+  * Change base height to avoid from leg stretching (`#1134 <https://github.com/fkanehiro/hrpsys-base/issues/1134>`_)
+    * [AutoBalancerService.idl, AutoBalancer.*] avoid limb stretch by changing root height
+    * [Stabilizer.cpp] smoothly change root height when switching use_limb_stretch_avoidance
+
+* Update python function to start all default controllers (`#1130 <https://github.com/fkanehiro/hrpsys-base/issues/1130>`_)
+  * [python/hrpsys_config.py] Support non-legged robot and leg-only robot in startDefaultUnstableControllers and stopDefaultUnstableControllers
+
+* Add new functionality to remove force sensor offset (`#1132 <https://github.com/fkanehiro/hrpsys-base/issues/1132>`_, `#1133 <https://github.com/fkanehiro/hrpsys-base/issues/1133>`_)
+  * [idl/RemoveForceSensorLinkOffsetService.idl, rtc/RemoveForceSensorLinkOffset, python/hrpsys_config.py, sample/SampleRobot/samplerobot_remove_force_offset.py] Add argument for duration of calibration. Set 8.0[s] as default value in python code
+  * [python/hrpsys_config.py,sample/SampleRobot/samplerobot_remove_force_offset.py] Add sample and python interface for removing force sensor offset.
+  * [idl/RemoveForceSensorLinkOffsetService, rtc/RemoveForceSensorLinkOffset] Add function to remove force sensor offset in RMFO RTC.
+  * [rtc/RemoveForceSensorLinkOffset/RemoveForceSensorLinkOffset.txt] Add documentation abount two types of offsets.
+
+* Contributors: Fumio KANEHIRO, Isaac I.Y. Saito, Mehdi Benallegue, Shunichi Nozawa, Tatsuya Ishikawa, YutaKojio
+
+315.12.1 (2017-04-04)
+---------------------
+
+Stable RTCs
+=============
+
+* Fix bug of https://github.com/fkanehiro/hrpsys-base/pull/1103 (`#1114 <https://github.com/fkanehiro/hrpsys-base/issues/1114>`_)
+  * [CMakeLists.txt] use separate_arguments to set semicolon to variable.
+
+Unstable RTCs
+=============
+
+* Update for 3rdparty (`#1115 <https://github.com/fkanehiro/hrpsys-base/issues/1115>`_)
+  * [3rdparty/qpOASES/CMakeLists.txt] trust server of QPOASES
+
+* Add ApproximateVoxelGridFilter (`#1117 <https://github.com/fkanehiro/hrpsys-base/issues/1117>`_)
+  * replace VoxelGridFilter with ApproximateVoxelGridFilter
+  * add a new RT component, ApproximateVoxelGridFilter
+
+* Update for ApproximateVoxelGridFilter
+  * copy timestamp from input cloud to output cloud
+  * add debug mode and pass through mode
+
+* Add PointCloudViewer (`#1116 <https://github.com/fkanehiro/hrpsys-base/issues/1116>`_)
+  * add a new RT component, PointCloudViewer
+
+* Update for VoxelGridFilter
+  * copy is_dense attribute from input point cloud
+  * add debugLevel property and support pass-through mode
+
+* Update Stabilizer in-the-air behavior (`#1090 <https://github.com/fkanehiro/hrpsys-base/issues/1090>`_)
+  * [Stabilizer] Set default detection time whether robot is in air to zero
+  * [Stabilizer] Set detection time whether robot is in air
+  * [Stabilizer] Rename variables
+
+* Rename and separate functions (`#1111 <https://github.com/fkanehiro/hrpsys-base/issues/1111>`_)
+  * Stabilizer
+    * [rtc/Stabilizer/Stabilizer.*] Rename contact_states -> ref_contact_states. Rename isContact -> act_contact_states
+  * AutoBalancer
+    * [rtc/AutoBalancer/AutoBalancer.*] Separate solving IK codes as class. Currently, transition and SBP calculation is not separated. (This is expected not to change behavior).
+    * [rtc/AutoBalancer/AutoBalancer.cpp] Output and set OutPort only for legged robots.
+    * [rtc/AutoBalancer/AutoBalancer.*] Make startWalking without ABC deprecated and fix position of calling of stopWalking and zmp_weight_mzp interpolation.
+    * [rtc/AutoBalancer/AutoBalancer.*] Remove unnecessary member vaiable (target_end_coords)
+    * [rtc/AutoBalancer/AutoBalancer*] Separate codes from IK parts. (This commit is expected not to change the behavior)
+    * [rtc/AutoBalancer/AutoBalancer.*] Include target EE coords calculation in separated functions. (This commit is expected not to change the behavior).
+    * [rtc/AutoBalancer/AutoBalancer.*] Separate procedures in getTargetParameters as fucntions. (This commit is expected not to change the behavior).
+    * [rtc/AutoBalancer/AutoBalancer.*] Fix order of transition code. Separate functions to calculate output from ABC. (This commit is expected not to change the behavior).
+    * [rtc/AutoBalancer/AutoBalancer.cpp] Fix parameter setting section in non-GaitGenerator parts. Fix index of default_zmp_offsets usage.
+    * [rtc/AutoBalancer/AutoBalancer, GaitGenerator] Separate and move codes from AutoBalancer to GaitGenrator, in order to get GaitGenerator results in AutoBalancer. (This commit is expected not to change the behavior)
+    * [rtc/AutoBalancer/AutoBalancer.cpp] Use target EE pos and rot instead of target link origin pos and rot from SequencePlayer target. (This commit is expected not to change the behavior)
+  * ImpedanceController
+    * [rtc/ImpedanceController/ImpedanceController.*] Separate functions, add comments, and fix order and calculation of calcForceMoment. (This commit is expected not to change the behavior)
+  * Update samples for unstable RTCs
+    * [launch/sample4legrobot.launch,sample6dofrobot.launch,samplespecialjointrobot.launch] Update conf_file setting for launch samples
+    * [sample/SampleRobot/samplerobot_impedance_controller.py] Separate tests as functions and improve execution time and result checking.
+
+* AutoBalancer update by adding inverse dynamics function (`#1110 <https://github.com/fkanehiro/hrpsys-base/issues/1110>`_)
+  * refactor IIRFilter::setParameterAsBiquadButterworth -> IIRFilter::setParameterAsBiquad
+  * sqrt -> std::sqrt one more
+  * sqrt -> std::sqrt
+  * seperate InverseDynamics calculation sequence
+  * tan -> std::tan
+  * Revert "remove unused dependency from AutoBalancer/CMakeLists.txt"
+    This reverts commit 933edb0a1d05b7104e22eccc96f5639cedd607b4.
+  * remove unused dependency from AutoBalancer/CMakeLists.txt
+  * Revert "move InverseDynamics from ABC to IC/JointPathEx"
+    This reverts commit 9b2a76ea3d6e0f871b4460002ded668649711a19.
+  * move InverseDynamics from ABC to IC/JointPathEx
+  * move InverseDynamics from ABC to IC/JointPathEx
+  * merge from master
+  * Add inverse dynamics function
+
+* Contributors: Fumio KANEHIRO, Masaki Murooka, Ryo KOYAMA, Shunichi Nozawa, Tatsuya Ishikawa, Yasuhiro Ishiguro
+
 315.12.0 (2017-03-08)
 ---------------------
 
