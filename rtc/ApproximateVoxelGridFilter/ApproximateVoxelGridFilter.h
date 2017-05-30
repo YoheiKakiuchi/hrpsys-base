@@ -1,32 +1,23 @@
 // -*- C++ -*-
 /*!
- * @file  RemoveForceSensorLinkOffset.h
- * @brief null component
+ * @file  ApproximateVoxelGridFilter.h
+ * @brief Moving Least Squares Filter
  * @date  $Date$
  *
  * $Id$
  */
 
-#ifndef REMOVEFORCESENSORLINKOFFSET_H
-#define REMOVEFORCESENSORLINKOFFSET_H
+#ifndef VOXEL_GRID_FILTER_H
+#define VOXEL_GRID_FILTER_H
 
 #include <rtm/idl/BasicDataType.hh>
-#include <rtm/idl/ExtendedDataTypes.hh>
+#include "hrpsys/idl/pointcloud.hh"
 #include <rtm/Manager.h>
 #include <rtm/DataFlowComponentBase.h>
 #include <rtm/CorbaPort.h>
 #include <rtm/DataInPort.h>
 #include <rtm/DataOutPort.h>
 #include <rtm/idl/BasicDataTypeSkel.h>
-#include <rtm/idl/ExtendedDataTypesSkel.h>
-#include <hrpModel/Body.h>
-#include <hrpModel/Link.h>
-#include <hrpModel/JointPath.h>
-#include <hrpUtil/EigenTypes.h>
-
-#include "RemoveForceSensorLinkOffsetService_impl.h"
-#include "../ImpedanceController/RatsMatrix.h"
-#include <semaphore.h>
 
 // Service implementation headers
 // <rtc-template block="service_impl_h">
@@ -43,7 +34,7 @@ using namespace RTC;
 /**
    \brief sample RT component which has one data input port and one data output port
  */
-class RemoveForceSensorLinkOffset
+class ApproximateVoxelGridFilter
   : public RTC::DataFlowComponentBase
 {
  public:
@@ -51,11 +42,11 @@ class RemoveForceSensorLinkOffset
      \brief Constructor
      \param manager pointer to the Manager
   */
-  RemoveForceSensorLinkOffset(RTC::Manager* manager);
+  ApproximateVoxelGridFilter(RTC::Manager* manager);
   /**
      \brief Destructor
   */
-  virtual ~RemoveForceSensorLinkOffset();
+  virtual ~ApproximateVoxelGridFilter();
 
   // The initialize action (on CREATED->ALIVE transition)
   // formaer rtc_init_entry()
@@ -104,39 +95,26 @@ class RemoveForceSensorLinkOffset
   // The action that is invoked when execution context's rate is changed
   // no corresponding operation exists in OpenRTm-aist-0.2.0
   // virtual RTC::ReturnCode_t onRateChanged(RTC::UniqueId ec_id);
-  bool setForceMomentOffsetParam(const std::string& i_name_, const OpenHRP::RemoveForceSensorLinkOffsetService::forcemomentOffsetParam &i_param_);
-  bool getForceMomentOffsetParam(const std::string& i_name_, OpenHRP::RemoveForceSensorLinkOffsetService::forcemomentOffsetParam& i_param_);
-  bool loadForceMomentOffsetParams(const std::string& filename);
-  bool dumpForceMomentOffsetParams(const std::string& filename);
-  bool removeForceSensorOffset (const ::OpenHRP::RemoveForceSensorLinkOffsetService::StrSequence& names, const double tm);
+
 
  protected:
   // Configuration variable declaration
   // <rtc-template block="config_declare">
   
   // </rtc-template>
-  // TimedDoubleSeq m_qRef;
-  TimedDoubleSeq m_qCurrent;
-  TimedOrientation3D m_rpy;
-  
+
+  PointCloudTypes::PointCloud m_original;
+  PointCloudTypes::PointCloud m_filtered;
+
   // DataInPort declaration
   // <rtc-template block="inport_declare">
-  InPort<TimedDoubleSeq> m_qCurrentIn;
-  InPort<TimedOrientation3D> m_rpyIn;
-
+  InPort<PointCloudTypes::PointCloud> m_originalIn;
   
   // </rtc-template>
 
   // DataOutPort declaration
   // <rtc-template block="outport_declare">
-  std::vector<TimedDoubleSeq> m_force;
-  std::vector<InPort<TimedDoubleSeq> *> m_forceIn;
-  std::vector<OutPort<TimedDoubleSeq> *> m_forceOut;
-  
-  // </rtc-template>
-
-  // DataOutPort declaration
-  // <rtc-template block="outport_declare">
+  OutPort<PointCloudTypes::PointCloud> m_filteredOut;
   
   // </rtc-template>
 
@@ -147,52 +125,24 @@ class RemoveForceSensorLinkOffset
 
   // Service declaration
   // <rtc-template block="service_declare">
-  RTC::CorbaPort m_RemoveForceSensorLinkOffsetServicePort;
   
   // </rtc-template>
 
   // Consumer declaration
   // <rtc-template block="consumer_declare">
-  RemoveForceSensorLinkOffsetService_impl m_service0;
   
   // </rtc-template>
 
  private:
-  struct ForceMomentOffsetParam {
-    hrp::Vector3 force_offset, moment_offset, link_offset_centroid;
-    hrp::Vector3 off_force, off_moment;
-    double link_offset_mass;
-    // Members for sensor offset calib
-    hrp::Vector3 force_offset_sum, moment_offset_sum;
-    int sensor_offset_calib_counter;
-    sem_t wait_sem;
-
-    ForceMomentOffsetParam ()
-      : force_offset(hrp::Vector3::Zero()), moment_offset(hrp::Vector3::Zero()),
-        off_force(hrp::Vector3::Zero()), off_moment(hrp::Vector3::Zero()),
-        link_offset_centroid(hrp::Vector3::Zero()), link_offset_mass(0),
-        force_offset_sum(hrp::Vector3::Zero()), moment_offset_sum(hrp::Vector3::Zero()),
-        sensor_offset_calib_counter(0), wait_sem()
-    {
-        sem_init(&wait_sem, 0, 0);
-    };
-  };
-  void updateRootLinkPosRot (const hrp::Vector3& rpy);
-  void printForceMomentOffsetParam(const std::string& i_name_);
-
-  std::map<std::string, ForceMomentOffsetParam> m_forcemoment_offset_param;
-  static const double grav = 9.80665; /* [m/s^2] */
-  double m_dt;
-  hrp::BodyPtr m_robot;
-  unsigned int m_debugLevel;
-  int max_sensor_offset_calib_counter;
-  coil::Mutex m_mutex;
+  int m_debugLevel;
+  int dummy;
+  double m_size;
 };
 
 
 extern "C"
 {
-  void RemoveForceSensorLinkOffsetInit(RTC::Manager* manager);
+  void ApproximateVoxelGridFilterInit(RTC::Manager* manager);
 };
 
-#endif // REMOVEFORCESENSORLINKOFFSET_H
+#endif // VOXEL_GRID_FILTER_H

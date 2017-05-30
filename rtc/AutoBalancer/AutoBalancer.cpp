@@ -49,6 +49,8 @@ AutoBalancer::AutoBalancer(RTC::Manager* manager)
       m_zmpIn("zmpIn", m_zmp),
       m_optionalDataIn("optionalData", m_optionalData),
       m_emergencySignalIn("emergencySignal", m_emergencySignal),
+      m_diffCPIn("diffCapturePoint", m_diffCP),
+      m_actContactStatesIn("actContactStates", m_actContactStates),
       m_qOut("q", m_qRef),
       m_zmpOut("zmpOut", m_zmp),
       m_basePosOut("basePosOut", m_basePos),
@@ -90,6 +92,8 @@ RTC::ReturnCode_t AutoBalancer::onInitialize()
     addInPort("zmpIn", m_zmpIn);
     addInPort("optionalData", m_optionalDataIn);
     addInPort("emergencySignal", m_emergencySignalIn);
+    addInPort("diffCapturePoint", m_diffCPIn);
+    addInPort("actContactStates", m_actContactStatesIn);
 
     // Set OutPort buffer
     addOutPort("q", m_qOut);
@@ -168,6 +172,7 @@ RTC::ReturnCode_t AutoBalancer::onInitialize()
         coil::stringTo(ee_target, end_effectors_str[i*prop_num+1].c_str());
         coil::stringTo(ee_base, end_effectors_str[i*prop_num+2].c_str());
         ABCIKparam tp;
+        hrp::Link* root = m_robot->link(ee_target);
         for (size_t j = 0; j < 3; j++) {
           coil::stringTo(tp.localPos(j), end_effectors_str[i*prop_num+3+j].c_str());
         }
@@ -182,6 +187,12 @@ RTC::ReturnCode_t AutoBalancer::onInitialize()
         tmp_fikp.target_link = m_robot->link(ee_target);
         tmp_fikp.localPos = tp.localPos;
         tmp_fikp.localR = tp.localR;
+        tmp_fikp.max_limb_length = 0.0;
+        while (!root->isRoot()) {
+          tmp_fikp.max_limb_length += root->b.norm();
+          tmp_fikp.parent_name = root->name;
+          root = root->parent;
+        }
         fik->ikp.insert(std::pair<std::string, SimpleFullbodyInverseKinematicsSolver::IKparam>(ee_name, tmp_fikp));
         // Fix for toe joint
         //   Toe joint is defined as end-link joint in the case that end-effector link != force-sensor link
@@ -439,6 +450,18 @@ RTC::ReturnCode_t AutoBalancer::onExecute(RTC::UniqueId ec_id)
         //     gg->emergency_stop();
         // }
     }
+    if (m_diffCPIn.isNew()) {
+      m_diffCPIn.read();
+      gg->set_diff_cp(hrp::Vector3(m_diffCP.data.x, m_diffCP.data.y, m_diffCP.data.z));
+    }
+    if (m_actContactStatesIn.isNew()) {
+      m_actContactStatesIn.read();
+      std::vector<bool> tmp_contacts(m_actContactStates.data.length());
+      for (size_t i = 0; i < m_actContactStates.data.length(); i++) {
+        tmp_contacts[i] = m_actContactStates.data[i];
+      }
+      gg->set_act_contact_states(tmp_contacts);
+    }
 
     // Calculation
     Guard guard(m_mutex);
@@ -458,9 +481,26 @@ RTC::ReturnCode_t AutoBalancer::onExecute(RTC::UniqueId ec_id)
       }
       if (control_mode != MODE_IDLE ) {
         solveFullbodyIK();
+//        /////// Inverse Dynamics /////////
+//        if(!idsb.is_initialized){
+//          idsb.setInitState(m_robot, m_dt);
+//          invdyn_zmp_filters.resize(3);
+//          for(int i=0;i<3;i++){
+//            invdyn_zmp_filters[i].setParameterAsBiquad(25, 1/std::sqrt(2), 1.0/m_dt);
+//            invdyn_zmp_filters[i].reset(ref_zmp(i));
+//          }
+//        }
+//        calcAccelerationsForInverseDynamics(m_robot, idsb);
+//        if(gg_is_walking){
+//          calcWorldZMPFromInverseDynamics(m_robot, idsb, ref_zmp);
+//          for(int i=0;i<3;i++) ref_zmp(i) = invdyn_zmp_filters[i].passFilter(ref_zmp(i));
+//        }
+//        updateInvDynStateBuffer(idsb);
+
         rel_ref_zmp = m_robot->rootLink()->R.transpose() * (ref_zmp - m_robot->rootLink()->p);
       } else {
         rel_ref_zmp = input_zmp;
+        fik->d_root_height = 0.0;
       }
       // Transition
       if (!is_transition_interpolator_empty) {
@@ -1023,6 +1063,7 @@ void AutoBalancer::solveFullbodyIK ()
   fik->solveFullbodyIK (dif_cog, transition_interpolator->isEmpty());
 }
 
+
 /*
   RTC::ReturnCode_t AutoBalancer::onAborting(RTC::UniqueId ec_id)
   {
@@ -1451,8 +1492,13 @@ bool AutoBalancer::setGaitGeneratorParam(const OpenHRP::AutoBalancerService::Gai
   gg->set_optional_go_pos_finalize_footstep_num(i_param.optional_go_pos_finalize_footstep_num);
   gg->set_overwritable_footstep_index_offset(i_param.overwritable_footstep_index_offset);
   gg->set_leg_margin(i_param.leg_margin);
+  gg->set_stride_limitation_for_circle_type(i_param.stride_limitation_for_circle_type);
   gg->set_overwritable_stride_limitation(i_param.overwritable_stride_limitation);
   gg->set_use_stride_limitation(i_param.use_stride_limitation);
+  gg->set_footstep_modification_gain(i_param.footstep_modification_gain);
+  gg->set_modify_footsteps(i_param.modify_footsteps);
+  gg->set_cp_check_margin(i_param.cp_check_margin);
+  gg->set_margin_time_ratio(i_param.margin_time_ratio);
   if (i_param.stride_limitation_type == OpenHRP::AutoBalancerService::SQUARE) {
     gg->set_stride_limitation_type(SQUARE);
   } else if (i_param.stride_limitation_type == OpenHRP::AutoBalancerService::CIRCLE) {
@@ -1534,10 +1580,19 @@ bool AutoBalancer::getGaitGeneratorParam(OpenHRP::AutoBalancerService::GaitGener
   for (size_t i=0; i<4; i++) {
     i_param.leg_margin[i] = gg->get_leg_margin(i);
   }
-  for (size_t i=0; i<4; i++) {
+  for (size_t i=0; i<5; i++) {
+    i_param.stride_limitation_for_circle_type[i] = gg->get_stride_limitation_for_circle_type(i);
+  }
+  for (size_t i=0; i<5; i++) {
     i_param.overwritable_stride_limitation[i] = gg->get_overwritable_stride_limitation(i);
   }
   i_param.use_stride_limitation = gg->get_use_stride_limitation();
+  i_param.footstep_modification_gain = gg->get_footstep_modification_gain();
+  i_param.modify_footsteps = gg->get_modify_footsteps();
+  for (size_t i=0; i<2; i++) {
+    i_param.cp_check_margin[i] = gg->get_cp_check_margin(i);
+  }
+  i_param.margin_time_ratio = gg->get_margin_time_ratio();
   if (gg->get_stride_limitation_type() == SQUARE) {
     i_param.stride_limitation_type = OpenHRP::AutoBalancerService::SQUARE;
   } else if (gg->get_stride_limitation_type() == CIRCLE) {
@@ -1663,6 +1718,15 @@ bool AutoBalancer::setAutoBalancerParam(const OpenHRP::AutoBalancerService::Auto
   fik->printParam();
   // IK limb parameters
   fik->setIKParam(ee_vec, i_param.ik_limb_parameters);
+  // Limb stretch avoidance
+  fik->use_limb_stretch_avoidance = i_param.use_limb_stretch_avoidance;
+  fik->limb_stretch_avoidance_time_const = i_param.limb_stretch_avoidance_time_const;
+  for (size_t i = 0; i < 2; i++) {
+    fik->limb_stretch_avoidance_vlimit[i] = i_param.limb_stretch_avoidance_vlimit[i];
+  }
+  for (size_t i = 0; i < fik->ikp.size(); i++) {
+    fik->ikp[ee_vec[i]].limb_length_margin = i_param.limb_length_margin[i];
+  }
   return true;
 };
 
@@ -1728,6 +1792,16 @@ bool AutoBalancer::getAutoBalancerParam(OpenHRP::AutoBalancerService::AutoBalanc
   i_param.rot_ik_thre = fik->rot_ik_thre;
   // IK limb parameters
   fik->getIKParam(ee_vec, i_param.ik_limb_parameters);
+  // Limb stretch avoidance
+  i_param.use_limb_stretch_avoidance = fik->use_limb_stretch_avoidance;
+  i_param.limb_stretch_avoidance_time_const = fik->limb_stretch_avoidance_time_const;
+  i_param.limb_length_margin.length(fik->ikp.size());
+  for (size_t i = 0; i < 2; i++) {
+    i_param.limb_stretch_avoidance_vlimit[i] = fik->limb_stretch_avoidance_vlimit[i];
+  }
+  for (size_t i = 0; i < ikp.size(); i++) {
+    i_param.limb_length_margin[i] = fik->ikp[ee_vec[i]].limb_length_margin;
+  }
   return true;
 };
 
