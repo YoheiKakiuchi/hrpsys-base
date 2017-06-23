@@ -407,6 +407,7 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
   is_estop_while_walking = false;
   sbp_cog_offset = hrp::Vector3(0.0, 0.0, 0.0);
   use_limb_stretch_avoidance = false;
+  use_zmp_truncation = false;
   limb_stretch_avoidance_time_const = 1.5;
   limb_stretch_avoidance_vlimit[0] = -100 * 1e-3 * dt; // lower limit
   limb_stretch_avoidance_vlimit[1] = 50 * 1e-3 * dt; // upper limit
@@ -945,6 +946,18 @@ void Stabilizer::getActualParameters ()
               tmpp = foot_origin_rot.transpose()*(cop_pos[i]-foot_origin_pos);
               std::cerr << ", cop_pos (" << ee_name[i] << ")    = " << hrp::Vector3(tmpp*1e3).format(Eigen::IOFormat(Eigen::StreamPrecision, 0, ", ", ", ", "", "", "[", "]")) << "[mm]" << std::endl;
           }
+      }
+
+      // truncate ZMP
+      if (use_zmp_truncation) {
+        Eigen::Vector2d tmp_new_refzmp(new_refzmp.head(2));
+        SimpleZMPDistributor::leg_type support_leg;
+        if (ref_contact_states[contact_states_index_map["rleg"]] && ref_contact_states[contact_states_index_map["lleg"]]) support_leg = SimpleZMPDistributor::BOTH;
+        else if (ref_contact_states[contact_states_index_map["rleg"]]) support_leg = SimpleZMPDistributor::RLEG;
+        else if (ref_contact_states[contact_states_index_map["lleg"]]) support_leg = SimpleZMPDistributor::LLEG;
+        if (!szd->is_inside_support_polygon(tmp_new_refzmp, ee_pos, ee_rot, ee_name, support_leg, std::vector<double>(), hrp::Vector3(0.0, 0.0, 0.0), true)){
+          new_refzmp.head(2) = tmp_new_refzmp;
+        }
       }
 
       // Distribute ZMP into each EE force/moment at each COP
@@ -1762,14 +1775,17 @@ void Stabilizer::calcDiffFootOriginExtMoment ()
     hrp::Vector3 act_ext_moment = hrp::Vector3(act_env_force(1) * act_zmp(2) - act_env_force(2) * act_zmp(1) + mg * act_cog(1),
                                                -(act_env_force(0) * act_zmp(2) - act_env_force(2) * act_zmp(0) + mg * act_cog(0)),
                                                0);
+    // Do not calculate actual value if in the air, because of invalid act_zmp.
+    if ( !on_ground ) act_ext_moment = ref_ext_moment;
+    // Calc diff
+    diff_foot_origin_ext_moment = ref_ext_moment - act_ext_moment;
     if (DEBUGP) {
         std::cerr << "[" << m_profile.instance_name << "] DiffStaticBalancePointOffset" << std::endl;
         std::cerr << "[" << m_profile.instance_name << "]   "
                   << "ref_ext_moment = " << ref_ext_moment.format(Eigen::IOFormat(Eigen::StreamPrecision, 0, ", ", ", ", "", "", "    [", "]")) << "[mm], "
-                  << "act_ext_moment = " << act_ext_moment.format(Eigen::IOFormat(Eigen::StreamPrecision, 0, ", ", ", ", "", "", "    [", "]")) << "[mm]" << std::endl;
+                  << "act_ext_moment = " << act_ext_moment.format(Eigen::IOFormat(Eigen::StreamPrecision, 0, ", ", ", ", "", "", "    [", "]")) << "[mm], "
+                  << "diff ext_moment = " << diff_foot_origin_ext_moment.format(Eigen::IOFormat(Eigen::StreamPrecision, 0, ", ", ", ", "", "", "    [", "]")) << "[mm]" << std::endl;
     }
-    // Calc diff
-    diff_foot_origin_ext_moment = ref_ext_moment - act_ext_moment;
 };
 
 /*
@@ -2018,6 +2034,7 @@ void Stabilizer::getParameter(OpenHRP::StabilizerService::stParam& i_stp)
   i_stp.emergency_check_mode = emergency_check_mode;
   i_stp.end_effector_list.length(stikp.size());
   i_stp.use_limb_stretch_avoidance = use_limb_stretch_avoidance;
+  i_stp.use_zmp_truncation = use_zmp_truncation;
   i_stp.limb_stretch_avoidance_time_const = limb_stretch_avoidance_time_const;
   i_stp.limb_length_margin.length(stikp.size());
   i_stp.detection_time_to_air = detection_count_to_air * dt;
@@ -2195,6 +2212,7 @@ void Stabilizer::setParameter(const OpenHRP::StabilizerService::stParam& i_stp)
   contact_decision_threshold = i_stp.contact_decision_threshold;
   is_estop_while_walking = i_stp.is_estop_while_walking;
   use_limb_stretch_avoidance = i_stp.use_limb_stretch_avoidance;
+  use_zmp_truncation = i_stp.use_zmp_truncation;
   limb_stretch_avoidance_time_const = i_stp.limb_stretch_avoidance_time_const;
   for (size_t i = 0; i < 2; i++) {
     limb_stretch_avoidance_vlimit[i] = i_stp.limb_stretch_avoidance_vlimit[i];
