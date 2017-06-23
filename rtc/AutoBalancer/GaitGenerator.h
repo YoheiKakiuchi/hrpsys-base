@@ -345,7 +345,7 @@ namespace rats
                                                      const std::vector<step_node>& _support_leg_steps,
                                                      const std::vector<step_node>& _swing_leg_steps);
         void push_refzmp_from_footstep_nodes_for_single (const std::vector<step_node>& fns, const std::vector<step_node>& _support_leg_steps, const toe_heel_types& tht);
-      void update_refzmp (const std::vector< std::vector<step_node> >& fnsl);
+      void update_refzmp ();
       // setter
       void set_indices (const size_t idx) { refzmp_index = idx; };
       void set_refzmp_count(const size_t _refzmp_count) { refzmp_count = _refzmp_count; };
@@ -443,6 +443,15 @@ namespace rats
       };
       void get_trajectory_point (hrp::Vector3& ret, const hrp::Vector3& start, const hrp::Vector3& goal, const double height)
       {
+        if ( current_count <= double_support_count_before ) { // first double support phase
+          pos = start;
+          vel = hrp::Vector3::Zero();
+          acc = hrp::Vector3::Zero();
+        } else if ( current_count >= one_step_count - double_support_count_after ) { // last double support phase
+          pos = goal;
+          vel = hrp::Vector3::Zero();
+          acc = hrp::Vector3::Zero();
+        }
         if ( double_support_count_before <= current_count && current_count < one_step_count - double_support_count_after ) { // swing phase
           size_t swing_remain_count = one_step_count - current_count - double_support_count_after;
           size_t swing_one_step_count = one_step_count - double_support_count_before - double_support_count_after;
@@ -470,14 +479,6 @@ namespace rats
           } else {
             pos(2) = goal(2);
           }
-        } else if ( current_count < double_support_count_before ) { // first double support phase
-          pos = start;
-          vel = hrp::Vector3::Zero();
-          acc = hrp::Vector3::Zero();
-        } else { // last double support phase
-          pos = goal;
-          vel = hrp::Vector3::Zero();
-          acc = hrp::Vector3::Zero();
         }
         ret = pos;
         current_count++;
