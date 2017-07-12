@@ -240,6 +240,9 @@ void seqplay::playPattern(std::vector<const double*> pos, std::vector<const doub
 	    d1 = (q_next[j] - q[j]);
 	    v0 = d0/t0;
 	    v1 = d1/t1;
+		if ( fabs(v0) < 0.001 || fabs(v1) < 0.001 ) {
+			v[j] = 0;
+		} else
 	    if ( v0 * v1 >= 0 ) {
 	      v[j] = 0.5 * (v0 + v1);
 	    } else {
