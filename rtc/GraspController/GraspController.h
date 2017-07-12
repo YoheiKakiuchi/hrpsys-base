@@ -156,6 +156,7 @@ class GraspController
   hrp::BodyPtr m_robot;
   double m_dt;
   unsigned int m_debugLevel;
+  int loop;
   int dummy;
 };
 

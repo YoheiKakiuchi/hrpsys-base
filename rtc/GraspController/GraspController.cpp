@@ -171,7 +171,7 @@ RTC::ReturnCode_t GraspController::onInitialize()
       std::cerr << std::endl;
       it++;
   }
-
+  loop = 0;
 
   return RTC::RTC_OK;
 }
@@ -213,9 +213,12 @@ RTC::ReturnCode_t GraspController::onDeactivated(RTC::UniqueId ec_id)
   return RTC::RTC_OK;
 }
 
+#define DEBUGP ((m_debugLevel==1 && loop%200==0) || m_debugLevel > 1 )
 RTC::ReturnCode_t GraspController::onExecute(RTC::UniqueId ec_id)
 {
   //std::cout << m_profile.instance_name<< ": onExecute(" << ec_id << ")" << std::endl;
+  loop++;
+
   if (m_qRefIn.isNew()) {
     m_qRefIn.read();
   }
@@ -226,8 +229,9 @@ RTC::ReturnCode_t GraspController::onExecute(RTC::UniqueId ec_id)
     m_qIn.read();
   }
 
-  if ( m_qRef.data.length() == m_qCurrent.data.length() &&
-       m_qRef.data.length() == m_q.data.length() ) {
+  if ( m_qRef.data.length()     ==  m_robot->numJoints() &&
+       m_qCurrent.data.length() ==  m_robot->numJoints() &&
+       m_q.data.length()        ==  m_robot->numJoints() ) {
 
     std::map<std::string, GraspParam >::iterator it = m_grasp_param.begin();
     while ( it != m_grasp_param.end() ) {
@@ -267,14 +271,18 @@ RTC::ReturnCode_t GraspController::onExecute(RTC::UniqueId ec_id)
     }
 
     m_qOut.write();
+#if 0
   }else if ( m_qCurrent.data.length() == m_q.data.length() ) {
     if (m_debugLevel==1) std::cerr << "GraspController in pass through mode..." << std::endl;
     m_qOut.write();
+#endif
   } else {
-    std::cerr << "GraspController is not working..." << std::endl;
-    std::cerr << "          m_qIn " << m_q.data.length() << std::endl;
-    std::cerr << "         m_qRef " << m_qRef.data.length() << std::endl;
-    std::cerr << "     m_qCurrent " << m_qCurrent.data.length() << std::endl;
+    if ( DEBUGP || loop % 100 == 0 ) {
+      std::cerr << "GraspController is not working..." << std::endl;
+      std::cerr << "          m_qIn " << m_q.data.length() << std::endl;
+      std::cerr << "         m_qRef " << m_qRef.data.length() << std::endl;
+      std::cerr << "     m_qCurrent " << m_qCurrent.data.length() << std::endl;
+    }
   }
 
   return RTC::RTC_OK;
