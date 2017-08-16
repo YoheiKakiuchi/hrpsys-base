@@ -43,6 +43,7 @@ ObjectContactTurnaroundDetector::ObjectContactTurnaroundDetector(RTC::Manager* m
       // <rtc-template block="initializer">
       m_qCurrentIn("qCurrent", m_qCurrent),
       m_rpyIn("rpy", m_rpy),
+      m_contactStatesIn("contactStates", m_contactStates),
       m_otdDataOut("otdData", m_otdData),
       m_ObjectContactTurnaroundDetectorServicePort("ObjectContactTurnaroundDetectorService"),
       // </rtc-template>
@@ -68,6 +69,7 @@ RTC::ReturnCode_t ObjectContactTurnaroundDetector::onInitialize()
     // Set InPort buffers
     addInPort("qCurrent", m_qCurrentIn);
     addInPort("rpy", m_rpyIn);
+    addInPort("contactStates", m_contactStatesIn);
 
     // Set OutPort buffer
     addOutPort("otdData", m_otdDataOut);
@@ -156,6 +158,7 @@ RTC::ReturnCode_t ObjectContactTurnaroundDetector::onInitialize()
             }
             eet.localR = Eigen::AngleAxis<double>(tmpv[3], hrp::Vector3(tmpv[0], tmpv[1], tmpv[2])).toRotationMatrix(); // rotation in VRML is represented by axis + angle
             eet.target_name = ee_target;
+            eet.index = i;
             ee_map.insert(std::pair<std::string, ee_trans>(ee_name , eet));
             base_name_map.insert(std::pair<std::string, std::string>(ee_name, ee_base));
             std::cerr << "[" << m_profile.instance_name << "] End Effector [" << ee_name << "]" << ee_target << " " << ee_base << std::endl;
@@ -163,6 +166,7 @@ RTC::ReturnCode_t ObjectContactTurnaroundDetector::onInitialize()
             std::cerr << "[" << m_profile.instance_name << "]   localPos = " << eet.localPos.format(Eigen::IOFormat(Eigen::StreamPrecision, 0, ", ", ", ", "", "", "    [", "]")) << "[m]" << std::endl;
             std::cerr << "[" << m_profile.instance_name << "]   localR = " << eet.localR.format(Eigen::IOFormat(Eigen::StreamPrecision, 0, ", ", "\n", "    [", "]")) << std::endl;
         }
+        m_contactStates.data.length(num);
     }
 
     // initialize sensor_names
@@ -263,6 +267,9 @@ RTC::ReturnCode_t ObjectContactTurnaroundDetector::onExecute(RTC::UniqueId ec_id
       m_qCurrentIn.read();
       m_otdData.tm = m_qCurrent.tm;
     }
+    if (m_contactStatesIn.isNew()) {
+      m_contactStatesIn.read();
+    }
     if ( m_qCurrent.data.length() ==  m_robot->numJoints() &&
          ee_map.find("rleg") != ee_map.end() && ee_map.find("lleg") != ee_map.end() ) { // if legged robot
         Guard guard(m_mutex);
@@ -321,6 +328,39 @@ void ObjectContactTurnaroundDetector::calcFootMidCoords (hrp::Vector3& new_foot_
   rats::mid_rot(new_foot_mid_rot, 0.5, foot_rot[0], foot_rot[1]);
 }
 
+void ObjectContactTurnaroundDetector::calcFootOriginCoords (hrp::Vector3& foot_origin_pos, hrp::Matrix33& foot_origin_rot)
+{
+  std::vector<rats::coordinates> leg_c_v;
+  hrp::Vector3 ez = hrp::Vector3::UnitZ();
+  hrp::Vector3 ex = hrp::Vector3::UnitX();
+  std::vector<std::string> leg_names;
+  for ( std::map<std::string, ee_trans>::iterator it = ee_map.begin(); it != ee_map.end(); it++ ) {
+      // If rleg or lleg, and if reference contact states is true
+      if (it->first.find("leg") != std::string::npos && m_contactStates.data[it->second.index]) leg_names.push_back(it->first);
+  }
+  for (size_t i = 0; i < leg_names.size(); i++) {
+    hrp::Link* target_link = m_robot->link(ee_map[leg_names[i]].target_name);
+    rats::coordinates leg_c(hrp::Vector3(target_link->p + target_link->R * ee_map[leg_names[i]].localPos), hrp::Matrix33(target_link->R * ee_map[leg_names[i]].localR));
+    hrp::Vector3 xv1(leg_c.rot * ex);
+    xv1(2)=0.0;
+    xv1.normalize();
+    hrp::Vector3 yv1(ez.cross(xv1));
+    leg_c.rot(0,0) = xv1(0); leg_c.rot(1,0) = xv1(1); leg_c.rot(2,0) = xv1(2);
+    leg_c.rot(0,1) = yv1(0); leg_c.rot(1,1) = yv1(1); leg_c.rot(2,1) = yv1(2);
+    leg_c.rot(0,2) = ez(0); leg_c.rot(1,2) = ez(1); leg_c.rot(2,2) = ez(2);
+    leg_c_v.push_back(leg_c);
+  }
+  if (leg_names.size() == 2) {
+    rats::coordinates tmpc;
+    rats::mid_coords(tmpc, 0.5, leg_c_v[0], leg_c_v[1]);
+    foot_origin_pos = tmpc.pos;
+    foot_origin_rot = tmpc.rot;
+  } else { // size = 1
+    foot_origin_pos = leg_c_v[0].pos;
+    foot_origin_rot = leg_c_v[0].rot;
+  }
+}
+
 void ObjectContactTurnaroundDetector::calcObjectContactTurnaroundDetectorState()
 {
     // TODO
@@ -332,10 +372,11 @@ void ObjectContactTurnaroundDetector::calcObjectContactTurnaroundDetectorState()
     updateRootLinkPosRot(m_rpy);
     m_robot->calcForwardKinematics();
     // Calc
-    std::vector<hrp::Vector3> otd_fmv, otd_hposv;
+    std::vector<hrp::Vector3> otd_forces, otd_moments, otd_hposv;
     hrp::Vector3 fmpos;
     hrp::Matrix33 fmrot, fmrotT;
-    calcFootMidCoords(fmpos, fmrot);
+    //calcFootMidCoords(fmpos, fmrot);
+    calcFootOriginCoords(fmpos, fmrot);
     fmrotT = fmrot.transpose();
     for (unsigned int i=0; i<m_forceIn.size(); i++) {
         std::string sensor_name = m_forceIn[i]->name();
@@ -344,7 +385,8 @@ void ObjectContactTurnaroundDetector::calcObjectContactTurnaroundDetectorState()
             hrp::Vector3 data_p(m_force[i].data[0], m_force[i].data[1], m_force[i].data[2]);
             hrp::Vector3 data_r(m_force[i].data[3], m_force[i].data[4], m_force[i].data[5]);
             hrp::Matrix33 sensorR = sensor->link->R * sensor->localR;
-            otd_fmv.push_back(fmrotT*(sensorR*data_p));
+            otd_forces.push_back(fmrotT*(sensorR*data_p));
+            otd_moments.push_back(fmrotT*(sensorR*data_r));
             hrp::Vector3 eePos;
             for ( std::map<std::string, ee_trans>::iterator it = ee_map.begin(); it != ee_map.end(); it++ ) {
                 if ( it->second.sensor_name == sensor_name ) {
@@ -356,7 +398,7 @@ void ObjectContactTurnaroundDetector::calcObjectContactTurnaroundDetectorState()
             otd_hposv.push_back(eePos);
         }
     }
-    otd->checkDetection(otd_fmv, otd_hposv);
+    otd->checkDetection(otd_forces, otd_moments, otd_hposv);
     // otdData
     m_otdData.data[0] = static_cast<double>(otd->getMode());
     m_otdData.data[1] = otd->getRawWrench();
@@ -429,7 +471,21 @@ bool ObjectContactTurnaroundDetector::setObjectContactTurnaroundDetectorParam(co
     otd->setAxis(tmp);
     for (size_t i = 0; i < 3; i++) tmp(i) = i_param_.moment_center[i];
     otd->setMomentCenter(tmp);
-    otd->setDetectorTotalWrench((i_param_.detector_total_wrench==OpenHRP::ObjectContactTurnaroundDetectorService::TOTAL_FORCE)?ObjectContactTurnaroundDetectorBase::TOTAL_FORCE:ObjectContactTurnaroundDetectorBase::TOTAL_MOMENT);
+    ObjectContactTurnaroundDetectorBase::detector_total_wrench dtw;
+    switch (i_param_.detector_total_wrench) {
+    case OpenHRP::ObjectContactTurnaroundDetectorService::TOTAL_FORCE:
+        dtw = ObjectContactTurnaroundDetectorBase::TOTAL_FORCE;
+        break;
+    case OpenHRP::ObjectContactTurnaroundDetectorService::TOTAL_MOMENT:
+        dtw = ObjectContactTurnaroundDetectorBase::TOTAL_MOMENT;
+        break;
+    case OpenHRP::ObjectContactTurnaroundDetectorService::TOTAL_MOMENT2:
+        dtw = ObjectContactTurnaroundDetectorBase::TOTAL_MOMENT2;
+        break;
+    default:
+        break;
+    }
+    otd->setDetectorTotalWrench(dtw);
     otd->printParams();
     return true;
 };
@@ -447,11 +503,25 @@ bool ObjectContactTurnaroundDetector::getObjectContactTurnaroundDetectorParam(Op
     for (size_t i = 0; i < 3; i++) i_param_.axis[i] = tmp(i);
     tmp = otd->getMomentCenter();
     for (size_t i = 0; i < 3; i++) i_param_.moment_center[i] = tmp(i);
-    i_param_.detector_total_wrench = (otd->getDetectorTotalWrench()==ObjectContactTurnaroundDetectorBase::TOTAL_FORCE)?OpenHRP::ObjectContactTurnaroundDetectorService::TOTAL_FORCE:OpenHRP::ObjectContactTurnaroundDetectorService::TOTAL_MOMENT;
+    OpenHRP::ObjectContactTurnaroundDetectorService::DetectorTotalWrench dtw;
+    switch (otd->getDetectorTotalWrench()) {
+    case ObjectContactTurnaroundDetectorBase::TOTAL_FORCE:
+        dtw = OpenHRP::ObjectContactTurnaroundDetectorService::TOTAL_FORCE;
+        break;
+    case ObjectContactTurnaroundDetectorBase::TOTAL_MOMENT:
+        dtw = OpenHRP::ObjectContactTurnaroundDetectorService::TOTAL_MOMENT;
+        break;
+    case ObjectContactTurnaroundDetectorBase::TOTAL_MOMENT2:
+        dtw = OpenHRP::ObjectContactTurnaroundDetectorService::TOTAL_MOMENT2;
+        break;
+    default:
+        break;
+    }
+    i_param_.detector_total_wrench = dtw;
     return true;
 }
 
-bool ObjectContactTurnaroundDetector::getObjectForcesMoments(OpenHRP::ObjectContactTurnaroundDetectorService::Dbl3Sequence_out o_forces, OpenHRP::ObjectContactTurnaroundDetectorService::Dbl3Sequence_out o_moments, OpenHRP::ObjectContactTurnaroundDetectorService::DblSequence3_out o_3dofwrench)
+bool ObjectContactTurnaroundDetector::getObjectForcesMoments(OpenHRP::ObjectContactTurnaroundDetectorService::Dbl3Sequence_out o_forces, OpenHRP::ObjectContactTurnaroundDetectorService::Dbl3Sequence_out o_moments, OpenHRP::ObjectContactTurnaroundDetectorService::DblSequence3_out o_3dofwrench, double& o_fric_coeff_wrench)
 {
     std::cerr << "[" << m_profile.instance_name << "] getObjectForcesMoments" << std::endl;
     if (otd_sensor_names.size() == 0) return false;
@@ -472,6 +542,7 @@ bool ObjectContactTurnaroundDetector::getObjectForcesMoments(OpenHRP::ObjectCont
     o_3dofwrench = new OpenHRP::ObjectContactTurnaroundDetectorService::DblSequence3 ();
     o_3dofwrench->length(3);
     for (size_t i = 0; i < 3; i++) (*o_3dofwrench)[i] = tmpv(i);
+    o_fric_coeff_wrench = otd->getFilteredFrictionCoeffWrench();
     return true;
 }
 

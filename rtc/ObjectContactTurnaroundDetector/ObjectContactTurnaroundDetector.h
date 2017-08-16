@@ -94,7 +94,7 @@ class ObjectContactTurnaroundDetector
   OpenHRP::ObjectContactTurnaroundDetectorService::DetectorMode checkObjectContactTurnaroundDetection();
   bool setObjectContactTurnaroundDetectorParam(const OpenHRP::ObjectContactTurnaroundDetectorService::objectContactTurnaroundDetectorParam &i_param_);
   bool getObjectContactTurnaroundDetectorParam(OpenHRP::ObjectContactTurnaroundDetectorService::objectContactTurnaroundDetectorParam& i_param_);
-  bool getObjectForcesMoments(OpenHRP::ObjectContactTurnaroundDetectorService::Dbl3Sequence_out o_forces, OpenHRP::ObjectContactTurnaroundDetectorService::Dbl3Sequence_out o_moments, OpenHRP::ObjectContactTurnaroundDetectorService::DblSequence3_out o_3dofwrench);
+  bool getObjectForcesMoments(OpenHRP::ObjectContactTurnaroundDetectorService::Dbl3Sequence_out o_forces, OpenHRP::ObjectContactTurnaroundDetectorService::Dbl3Sequence_out o_moments, OpenHRP::ObjectContactTurnaroundDetectorService::DblSequence3_out o_3dofwrench, double& o_fric_coeff_wrench);
 
  protected:
   // Configuration variable declaration
@@ -110,6 +110,8 @@ class ObjectContactTurnaroundDetector
   std::vector<InPort<TimedDoubleSeq> *> m_forceIn;
   TimedOrientation3D m_rpy;
   InPort<TimedOrientation3D> m_rpyIn;
+  TimedBooleanSeq m_contactStates;
+  InPort<TimedBooleanSeq> m_contactStatesIn;
   
   // </rtc-template>
 
@@ -143,10 +145,12 @@ class ObjectContactTurnaroundDetector
     std::string target_name, sensor_name;
     hrp::Vector3 localPos;
     hrp::Matrix33 localR;
+    size_t index;
   };
 
   void updateRootLinkPosRot (TimedOrientation3D tmprpy);
   void calcFootMidCoords (hrp::Vector3& new_foot_mid_pos, hrp::Matrix33& new_foot_mid_rot);
+  void calcFootOriginCoords (hrp::Vector3& foot_origin_pos, hrp::Matrix33& foot_origin_rot);
   void calcObjectContactTurnaroundDetectorState();
 
   std::map<std::string, ee_trans> ee_map;

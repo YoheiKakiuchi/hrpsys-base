@@ -381,6 +381,7 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
         root = root->parent;
       }
       ikp.limb_length_margin = 0.13;
+      ikp.support_time = 0.0;
   }
   eefm_swing_rot_damping_gain = hrp::Vector3(20*5, 20*5, 1e5);
   eefm_swing_pos_damping_gain = hrp::Vector3(33600, 33600, 7000);
@@ -951,13 +952,9 @@ void Stabilizer::getActualParameters ()
       // truncate ZMP
       if (use_zmp_truncation) {
         Eigen::Vector2d tmp_new_refzmp(new_refzmp.head(2));
-        SimpleZMPDistributor::leg_type support_leg;
-        if (ref_contact_states[contact_states_index_map["rleg"]] && ref_contact_states[contact_states_index_map["lleg"]]) support_leg = SimpleZMPDistributor::BOTH;
-        else if (ref_contact_states[contact_states_index_map["rleg"]]) support_leg = SimpleZMPDistributor::RLEG;
-        else if (ref_contact_states[contact_states_index_map["lleg"]]) support_leg = SimpleZMPDistributor::LLEG;
-        if (!szd->is_inside_support_polygon(tmp_new_refzmp, ee_pos, ee_rot, ee_name, support_leg, std::vector<double>(), hrp::Vector3(0.0, 0.0, 0.0), true)){
-          new_refzmp.head(2) = tmp_new_refzmp;
-        }
+        szd->get_vertices(support_polygon_vetices);
+        szd->calc_convex_hull(support_polygon_vetices, ref_contact_states, ee_pos, ee_rot);
+        if (!szd->is_inside_support_polygon(tmp_new_refzmp, hrp::Vector3::Zero(), true, std::string(m_profile.instance_name))) new_refzmp.head(2) = tmp_new_refzmp;
       }
 
       // Distribute ZMP into each EE force/moment at each COP
@@ -1335,20 +1332,10 @@ void Stabilizer::calcStateForEmergencySignal()
   // CP Check
   bool is_cp_outside = false;
   if (on_ground && transition_count == 0 && control_mode == MODE_ST) {
-    SimpleZMPDistributor::leg_type support_leg;
-    size_t l_idx, r_idx;
-    Eigen::Vector2d tmp_cp;
-    for (size_t i = 0; i < rel_ee_name.size(); i++) {
-      if (rel_ee_name[i]=="rleg") r_idx = i;
-      else if (rel_ee_name[i]=="lleg") l_idx = i;
-    }
-    for (size_t i = 0; i < 2; i++) {
-      tmp_cp(i) = act_cp(i);
-    }
-    if (act_contact_states[contact_states_index_map["rleg"]] && act_contact_states[contact_states_index_map["lleg"]]) support_leg = SimpleZMPDistributor::BOTH;
-    else if (act_contact_states[contact_states_index_map["rleg"]]) support_leg = SimpleZMPDistributor::RLEG;
-    else if (act_contact_states[contact_states_index_map["lleg"]]) support_leg = SimpleZMPDistributor::LLEG;
-    if (!is_walking || is_estop_while_walking) is_cp_outside = !szd->is_inside_support_polygon(tmp_cp, rel_ee_pos, rel_ee_rot, rel_ee_name, support_leg, cp_check_margin, - sbp_cog_offset);
+    Eigen::Vector2d tmp_cp = act_cp.head(2);
+    szd->get_margined_vertices(margined_support_polygon_vetices);
+    szd->calc_convex_hull(margined_support_polygon_vetices, act_contact_states, rel_ee_pos, rel_ee_rot);
+    if (!is_walking || is_estop_while_walking) is_cp_outside = !szd->is_inside_support_polygon(tmp_cp, - sbp_cog_offset);
     if (DEBUGP) {
       std::cerr << "[" << m_profile.instance_name << "] CP value " << "[" << act_cp(0) << "," << act_cp(1) << "] [m], "
                 << "sbp cog offset [" << sbp_cog_offset(0) << " " << sbp_cog_offset(1) << "], outside ? "
@@ -1475,7 +1462,11 @@ void Stabilizer::calcSwingSupportLimbGain ()
     for (size_t i = 0; i < stikp.size(); i++) {
         STIKParam& ikp = stikp[i];
         if (ref_contact_states[i]) { // Support
-            ikp.support_time += dt;
+            // Limit too large support time increment. Max time is 3600.0[s] = 1[h], this assumes that robot's one step time is smaller than 1[h].
+            ikp.support_time = std::min(3600.0, ikp.support_time+dt);
+            // In some PC, does not work because the first line is optimized out.
+            // ikp.support_time += dt;
+            // ikp.support_time = std::min(3600.0, ikp.support_time);
             if (ikp.support_time > eefm_pos_transition_time) {
                 ikp.swing_support_gain = (m_controlSwingSupportTime.data[i] / eefm_pos_transition_time);
             } else {
@@ -1496,6 +1487,8 @@ void Stabilizer::calcSwingSupportLimbGain ()
         for (size_t i = 0; i < stikp.size(); i++) std::cerr << m_controlSwingSupportTime.data[i] << " ";
         std::cerr << "], toeheel_ratio = [";
         for (size_t i = 0; i < stikp.size(); i++) std::cerr << toeheel_ratio[i] << " ";
+        std::cerr << "], support_time = [";
+        for (size_t i = 0; i < stikp.size(); i++) std::cerr << stikp[i].support_time << " ";
         std::cerr << "]" << std::endl;
     }
 }
@@ -2206,6 +2199,7 @@ void Stabilizer::setParameter(const OpenHRP::StabilizerService::stParam& i_stp)
   for (size_t i = 0; i < cp_check_margin.size(); i++) {
     cp_check_margin[i] = i_stp.cp_check_margin[i];
   }
+  szd->set_vertices_from_margin_params(cp_check_margin);
   for (size_t i = 0; i < tilt_margin.size(); i++) {
     tilt_margin[i] = i_stp.tilt_margin[i];
   }

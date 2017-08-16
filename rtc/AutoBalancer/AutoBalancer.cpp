@@ -62,6 +62,7 @@ AutoBalancer::AutoBalancer(RTC::Manager* manager)
       m_emergencySignalIn("emergencySignal", m_emergencySignal),
       m_diffCPIn("diffCapturePoint", m_diffCP),
       m_refFootOriginExtMomentIn("refFootOriginExtMoment", m_refFootOriginExtMoment),
+      m_refFootOriginExtMomentIsHoldValueIn("refFootOriginExtMomentIsHoldValue", m_refFootOriginExtMomentIsHoldValue),
       m_actContactStatesIn("actContactStates", m_actContactStates),
       m_qOut("q", m_qRef),
       m_zmpOut("zmpOut", m_zmp),
@@ -107,6 +108,7 @@ RTC::ReturnCode_t AutoBalancer::onInitialize()
     addInPort("diffCapturePoint", m_diffCPIn);
     addInPort("actContactStates", m_actContactStatesIn);
     addInPort("refFootOriginExtMoment", m_refFootOriginExtMomentIn);
+    addInPort("refFootOriginExtMomentIsHoldValue", m_refFootOriginExtMomentIsHoldValueIn);
 
     // Set OutPort buffer
     addOutPort("q", m_qOut);
@@ -239,7 +241,7 @@ RTC::ReturnCode_t AutoBalancer::onInitialize()
         m_contactStates.data[contact_states_index_map["larm"]] = false;
       }
       m_controlSwingSupportTime.data.length(num);
-      for (size_t i = 0; i < num; i++) m_controlSwingSupportTime.data[i] = 0.0;
+      for (size_t i = 0; i < num; i++) m_controlSwingSupportTime.data[i] = 1.0;
       for (size_t i = 0; i < num; i++) m_toeheelRatio.data[i] = rats::no_using_toe_heel_ratio;
     }
     std::vector<hrp::Vector3> leg_pos;
@@ -279,15 +281,18 @@ RTC::ReturnCode_t AutoBalancer::onInitialize()
 
     // setting stride limitations from conf file
     double stride_fwd_x_limit = 0.15;
-    double stride_y_limit = 0.05;
-    double stride_th_limit = 10;
+    double stride_outside_y_limit = 0.05;
+    double stride_outside_th_limit = 10;
     double stride_bwd_x_limit = 0.05;
-    std::cerr << "[" << m_profile.instance_name << "] abc_stride_parameter : " << stride_fwd_x_limit << "[m], " << stride_y_limit << "[m], " << stride_th_limit << "[deg], " << stride_bwd_x_limit << "[m]" << std::endl;
+    double stride_inside_y_limit = stride_outside_y_limit*0.5;
+    double stride_inside_th_limit = stride_outside_th_limit*0.5;
+    std::cerr << "[" << m_profile.instance_name << "] abc_stride_parameter : " << stride_fwd_x_limit << "[m], " << stride_outside_y_limit << "[m], " << stride_outside_th_limit << "[deg], " << stride_bwd_x_limit << "[m]" << std::endl;
     if (default_zmp_offsets.size() == 0) {
       for (size_t i = 0; i < ikp.size(); i++) default_zmp_offsets.push_back(hrp::Vector3::Zero());
     }
     if (leg_offset_str.size() > 0) {
-      gg = ggPtr(new rats::gait_generator(m_dt, leg_pos, leg_names, stride_fwd_x_limit/*[m]*/, stride_y_limit/*[m]*/, stride_th_limit/*[deg]*/, stride_bwd_x_limit/*[m]*/));
+      gg = ggPtr(new rats::gait_generator(m_dt, leg_pos, leg_names, stride_fwd_x_limit/*[m]*/, stride_outside_y_limit/*[m]*/, stride_outside_th_limit/*[deg]*/,
+                                          stride_bwd_x_limit/*[m]*/, stride_inside_y_limit/*[m]*/, stride_inside_th_limit/*[m]*/));
       gg->set_default_zmp_offsets(default_zmp_offsets);
     }
     gg_is_walking = gg_solved = false;
@@ -372,6 +377,9 @@ RTC::ReturnCode_t AutoBalancer::onInitialize()
     if (sen == NULL) {
         std::cerr << "[" << m_profile.instance_name << "] WARNING! This robot model has no GyroSensor named 'gyrometer'! " << std::endl;
     }
+
+    additional_force_applied_link = m_robot->rootLink();
+    additional_force_applied_point_offset = hrp::Vector3::Zero();
     return RTC::RTC_OK;
 }
 
@@ -469,6 +477,9 @@ RTC::ReturnCode_t AutoBalancer::onExecute(RTC::UniqueId ec_id)
     }
     if (m_refFootOriginExtMomentIn.isNew()) {
       m_refFootOriginExtMomentIn.read();
+    }
+    if (m_refFootOriginExtMomentIsHoldValueIn.isNew()) {
+      m_refFootOriginExtMomentIsHoldValueIn.read();
     }
     if (m_actContactStatesIn.isNew()) {
       m_actContactStatesIn.read();
@@ -945,20 +956,22 @@ void AutoBalancer::updateTargetCoordsForHandFixMode (coordinates& tmp_fix_coords
 void AutoBalancer::calculateOutputRefForces ()
 {
     // TODO : need to be updated for multicontact and other walking
-    std::vector<hrp::Vector3> ee_pos;
-    for (size_t i = 0 ; i < leg_names.size(); i++) {
-        ABCIKparam& tmpikp = ikp[leg_names[i]];
-        ee_pos.push_back(tmpikp.target_p0 + tmpikp.target_r0 * default_zmp_offsets[i]);
+    if (leg_names.size() == 2) {
+        std::vector<hrp::Vector3> ee_pos;
+        for (size_t i = 0 ; i < leg_names.size(); i++) {
+            ABCIKparam& tmpikp = ikp[leg_names[i]];
+            ee_pos.push_back(tmpikp.target_p0 + tmpikp.target_r0 * default_zmp_offsets[i]);
+        }
+        double alpha = (ref_zmp - ee_pos[1]).norm() / ((ee_pos[0] - ref_zmp).norm() + (ee_pos[1] - ref_zmp).norm());
+        if (alpha>1.0) alpha = 1.0;
+        if (alpha<0.0) alpha = 0.0;
+        if (DEBUGP) {
+            std::cerr << "[" << m_profile.instance_name << "] alpha:" << alpha << std::endl;
+        }
+        double mg = m_robot->totalMass() * gg->get_gravitational_acceleration();
+        m_force[0].data[2] = alpha * mg;
+        m_force[1].data[2] = (1-alpha) * mg;
     }
-    double alpha = (ref_zmp - ee_pos[1]).norm() / ((ee_pos[0] - ref_zmp).norm() + (ee_pos[1] - ref_zmp).norm());
-    if (alpha>1.0) alpha = 1.0;
-    if (alpha<0.0) alpha = 0.0;
-    if (DEBUGP) {
-        std::cerr << "[" << m_profile.instance_name << "] alpha:" << alpha << std::endl;
-    }
-    double mg = m_robot->totalMass() * gg->get_gravitational_acceleration();
-    m_force[0].data[2] = alpha * mg;
-    m_force[1].data[2] = (1-alpha) * mg;
     if ( use_force == MODE_REF_FORCE_WITH_FOOT || use_force == MODE_REF_FORCE_RFU_EXT_MOMENT ) { // TODO : use other use_force mode. This should be depends on Stabilizer distribution mode.
         distributeReferenceZMPToWrenches (ref_zmp);
     }
@@ -1453,7 +1466,13 @@ void AutoBalancer::waitFootStepsEarly(const double tm)
 bool AutoBalancer::setGaitGeneratorParam(const OpenHRP::AutoBalancerService::GaitGeneratorParam& i_param)
 {
   std::cerr << "[" << m_profile.instance_name << "] setGaitGeneratorParam" << std::endl;
-  gg->set_stride_parameters(i_param.stride_parameter[0], i_param.stride_parameter[1], i_param.stride_parameter[2], i_param.stride_parameter[3]);
+  if (i_param.stride_parameter.length() == 4) { // Support old stride_parameter definitions
+      gg->set_stride_parameters(i_param.stride_parameter[0], i_param.stride_parameter[1], i_param.stride_parameter[2], i_param.stride_parameter[3],
+                                i_param.stride_parameter[1]*0.5, i_param.stride_parameter[2]*0.5);
+  } else {
+      gg->set_stride_parameters(i_param.stride_parameter[0], i_param.stride_parameter[1], i_param.stride_parameter[2], i_param.stride_parameter[3],
+                                i_param.stride_parameter[4], i_param.stride_parameter[5]);
+  }
   std::vector<hrp::Vector3> off;
   for (size_t i = 0; i < i_param.leg_default_translate_pos.length(); i++) {
       off.push_back(hrp::Vector3(i_param.leg_default_translate_pos[i][0], i_param.leg_default_translate_pos[i][1], i_param.leg_default_translate_pos[i][2]));
@@ -1534,7 +1553,7 @@ bool AutoBalancer::setGaitGeneratorParam(const OpenHRP::AutoBalancerService::Gai
 
 bool AutoBalancer::getGaitGeneratorParam(OpenHRP::AutoBalancerService::GaitGeneratorParam& i_param)
 {
-  gg->get_stride_parameters(i_param.stride_parameter[0], i_param.stride_parameter[1], i_param.stride_parameter[2], i_param.stride_parameter[3]);
+  gg->get_stride_parameters(i_param.stride_parameter[0], i_param.stride_parameter[1], i_param.stride_parameter[2], i_param.stride_parameter[3], i_param.stride_parameter[4], i_param.stride_parameter[5]);
   std::vector<hrp::Vector3> off;
   gg->get_leg_default_translate_pos(off);
   i_param.leg_default_translate_pos.length(off.size());
@@ -1718,6 +1737,20 @@ bool AutoBalancer::setAutoBalancerParam(const OpenHRP::AutoBalancerService::Auto
   } else if (i_param.default_gait_type == OpenHRP::AutoBalancerService::GALLOP) {
       gait_type = GALLOP;
   }
+  // Ref force balancing
+  std::cerr << "[" << m_profile.instance_name << "] Ref force balancing" << std::endl;
+  if ( use_force == MODE_REF_FORCE_WITH_FOOT && control_mode != MODE_IDLE ) {
+      std::cerr << "[" << m_profile.instance_name << "]   additional_force_applied_point_offset and additional_force_applied_link_name cannot be updated during MODE_REF_FORCE_WITH_FOOT and non-MODE_IDLE"<< std::endl;
+  } else if ( !m_robot->link(std::string(i_param.additional_force_applied_link_name)) ) {
+      std::cerr << "[" << m_profile.instance_name << "]   Invalid link name for additional_force_applied_link_name = " << i_param.additional_force_applied_link_name << std::endl;
+  } else {
+      additional_force_applied_link = m_robot->link(std::string(i_param.additional_force_applied_link_name));
+      for (size_t i = 0; i < 3; i++) {
+          additional_force_applied_point_offset(i) = i_param.additional_force_applied_point_offset[i];
+      }
+      std::cerr << "[" << m_profile.instance_name << "]   Link name for additional_force_applied_link_name = " << additional_force_applied_link->name << ", additional_force_applied_point_offset = " << additional_force_applied_point_offset.format(Eigen::IOFormat(Eigen::StreamPrecision, 0, ", ", ", ", "", "", "    [", "]")) << "[m]" << std::endl;
+  }
+
   for (std::map<std::string, ABCIKparam>::iterator it = ikp.begin(); it != ikp.end(); it++) {
       std::cerr << "[" << m_profile.instance_name << "] End Effector [" << it->first << "]" << std::endl;
       std::cerr << "[" << m_profile.instance_name << "]   localpos = " << it->second.localPos.format(Eigen::IOFormat(Eigen::StreamPrecision, 0, ", ", ", ", "", "", "    [", "]")) << "[m]" << std::endl;
@@ -1831,6 +1864,10 @@ bool AutoBalancer::getAutoBalancerParam(OpenHRP::AutoBalancerService::AutoBalanc
   }
   for (size_t i = 0; i < ikp.size(); i++) {
     i_param.limb_length_margin[i] = fik->ikp[ee_vec[i]].limb_length_margin;
+  }
+  i_param.additional_force_applied_link_name = additional_force_applied_link->name.c_str();
+  for (size_t i = 0; i < 3; i++) {
+      i_param.additional_force_applied_point_offset[i] = additional_force_applied_point_offset(i);
   }
   return true;
 };
@@ -2005,30 +2042,35 @@ void AutoBalancer::calc_static_balance_point_from_forces(hrp::Vector3& sb_point,
   }
   hrp::Vector3 total_nosensor_ref_force = mg * hrp::Vector3::UnitZ() - total_sensor_ref_force; // total ref force at the point without sensors, such as torso
   hrp::Vector3 tmp_ext_moment = fix_leg_coords2.pos.cross(total_nosensor_ref_force) + fix_leg_coords2.rot * hrp::Vector3(m_refFootOriginExtMoment.data.x, m_refFootOriginExtMoment.data.y, m_refFootOriginExtMoment.data.z);
+  // For MODE_REF_FORCE_RFU_EXT_MOMENT, store previous root position to calculate influence from tmp_ext_moment while walking (basically, root link moves while walking).
+  //   Calculate values via fix_leg_coords2 relative/world values.
+  static hrp::Vector3 prev_additional_force_applied_pos = fix_leg_coords2.rot.transpose() * (additional_force_applied_link->p-fix_leg_coords2.pos);
+  //   If not is_hold_value (not hold value), update prev_additional_force_applied_pos
+  if ( !m_refFootOriginExtMomentIsHoldValue.data ) {
+      prev_additional_force_applied_pos = fix_leg_coords2.rot.transpose() * (additional_force_applied_link->p-fix_leg_coords2.pos);
+  }
+  hrp::Vector3 tmp_prev_additional_force_applied_pos = fix_leg_coords2.rot * prev_additional_force_applied_pos + fix_leg_coords2.pos;
+  // Calculate SBP
   for (size_t j = 0; j < 2; j++) {
     nume(j) = mg * tmpcog(j);
     denom(j) = mg;
-    for (size_t i = 0; i < sensor_names.size(); i++) {
-      if ( sensor_names[i].find("hsensor") != std::string::npos || sensor_names[i].find("asensor") != std::string::npos ) { // tempolary to get arm force coords
-          hrp::Link* parentlink;
-          hrp::ForceSensor* sensor = m_robot->sensor<hrp::ForceSensor>(sensor_names[i]);
-          if (sensor) parentlink = sensor->link;
-          else parentlink = m_vfs[sensor_names[i]].link;
-          for ( std::map<std::string, ABCIKparam>::iterator it = ikp.begin(); it != ikp.end(); it++ ) {
-              if (it->second.target_link->name == parentlink->name) {
-                  hrp::Vector3 fpos = parentlink->p + parentlink->R * it->second.localPos;
-                  nume(j) += ( (fpos(2) - ref_com_height) * tmp_forces[i](j) - fpos(j) * tmp_forces[i](2) );
-                  denom(j) -= tmp_forces[i](2);
-              }
-          }
+    for ( std::map<std::string, ABCIKparam>::iterator it = ikp.begin(); it != ikp.end(); it++ ) {
+      // Check leg_names. leg_names is assumed to be support limb for locomotion, cannot be used for manipulation. If it->first is not included in leg_names, use it for manipulation and static balance point calculation.
+      if (std::find(leg_names.begin(), leg_names.end(), it->first) == leg_names.end()) {
+        size_t idx = contact_states_index_map[it->first];
+        // Force applied point is assumed as end effector
+        hrp::Vector3 fpos = it->second.target_link->p + it->second.target_link->R * it->second.localPos;
+        nume(j) += ( (fpos(2) - ref_com_height) * tmp_forces[idx](j) - fpos(j) * tmp_forces[idx](2) );
+        denom(j) -= tmp_forces[idx](2);
       }
     }
     if ( use_force == MODE_REF_FORCE_WITH_FOOT ) {
-        hrp::Vector3 fpos(m_robot->rootLink()->p);
+        hrp::Vector3 fpos(additional_force_applied_link->p+additional_force_applied_point_offset);
         nume(j) += ( (fpos(2) - ref_com_height) * total_nosensor_ref_force(j) - fpos(j) * total_nosensor_ref_force(2) );
         denom(j) -= total_nosensor_ref_force(2);
     } else if ( use_force == MODE_REF_FORCE_RFU_EXT_MOMENT ) {
-        nume(j) += (j==0 ? tmp_ext_moment(1):-tmp_ext_moment(0));
+        //nume(j) += (j==0 ? tmp_ext_moment(1):-tmp_ext_moment(0));
+        nume(j) += (tmp_prev_additional_force_applied_pos(j)-additional_force_applied_link->p(j))*total_nosensor_ref_force(2) + (j==0 ? tmp_ext_moment(1):-tmp_ext_moment(0));
         denom(j) -= total_nosensor_ref_force(2);
     }
     sb_point(j) = nume(j) / denom(j);
