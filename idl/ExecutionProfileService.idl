@@ -16,6 +16,7 @@ module OpenHRP
       long count;
       double max_process;
       double avg_process;
+      double sq_avg_process;
     };
     
     /**
@@ -26,6 +27,7 @@ module OpenHRP
       double max_period;              ///< maximum of execution period
       double min_period;              ///< minimum of execution period
       double avg_period;              ///< average of execution period
+      double sq_avg_period;           ///< average of square of execution period (for calculating deviation)
       double max_process;             ///< maximum of processing period
       sequence<ComponentProfile> profiles; ///< array of profiles of components
       long count;                     ///< the number of execution

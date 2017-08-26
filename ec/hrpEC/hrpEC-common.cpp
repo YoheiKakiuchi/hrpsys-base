@@ -60,6 +60,7 @@ namespace RTC
                 if (dt > m_profile.max_period) m_profile.max_period = dt;
                 if (dt < m_profile.min_period) m_profile.min_period = dt;
                 m_profile.avg_period = (m_profile.avg_period*m_profile.count + dt)/(m_profile.count+1);
+                m_profile.sq_avg_period = (m_profile.sq_avg_period*m_profile.count + dt*dt)/(m_profile.count+1);
             }
             m_profile.count++;
             m_tv = tv;
@@ -105,6 +106,7 @@ namespace RTC
 		for (unsigned int i=0; i<m_profile.profiles.length(); i++){
 		    m_profile.profiles[i].count = 0;
 		    m_profile.profiles[i].avg_process = 0;
+		    m_profile.profiles[i].sq_avg_process = 0;
 		    m_profile.profiles[i].max_process = 0;
 		}
 	    }
@@ -119,7 +121,9 @@ namespace RTC
                     = m_profile.profiles[i];
                 double dt = processes[i];
                 if (lcs == ACTIVE_STATE){
-                    prof.avg_process = (prof.avg_process*prof.count + dt)/(++prof.count);
+                    prof.avg_process = (prof.avg_process*prof.count + dt)/(prof.count+1);
+                    prof.sq_avg_process = (prof.sq_avg_process*prof.count + dt*dt)/(prof.count+1);
+                    prof.count++;
                 }
 	        if (prof.max_process < dt) prof.max_process = dt;
 	    }
@@ -193,12 +197,13 @@ namespace RTC
 
     void hrpExecutionContext::resetProfile()
     {
-        m_profile.max_period = m_profile.avg_period = 0;
+        m_profile.max_period = m_profile.avg_period = m_profile.sq_avg_period = 0;
         m_profile.min_period = 1.0; // enough long 
         m_profile.max_process = 0.0;
 	for( unsigned int i = 0 ; i < m_profile.profiles.length() ; i++ ){
             m_profile.profiles[i].count       = 0;
 	    m_profile.profiles[i].avg_process = 0;
+	    m_profile.profiles[i].sq_avg_process = 0;
 	    m_profile.profiles[i].max_process = 0;
         }
         m_profile.count = m_profile.timeover = 0;
