@@ -687,6 +687,7 @@ namespace rats
       } else if ( !overwrite_footstep_nodes_list.empty() && // If overwrite_footstep_node_list exists
                   (lcg.get_footstep_index() < footstep_nodes_list.size()-1) &&  // If overwrite_footstep_node_list is specified and current footstep is not last footstep.
                   get_overwritable_index() == overwrite_footstep_index ) {
+        std::cerr << ";;;;;;;;; over write / " << overwrite_footstep_index << std::endl;
         overwrite_refzmp_queue(overwrite_footstep_nodes_list);
         overwrite_footstep_nodes_list.clear();
       }
