@@ -311,6 +311,7 @@ class Stabilizer
   boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> > act_cogvel_filter;
   OpenHRP::StabilizerService::STAlgorithm st_algorithm;
   SimpleZMPDistributor* szd;
+  std::vector<std::vector<Eigen::Vector2d> > support_polygon_vetices, margined_support_polygon_vetices;
   // TPCC
   double k_tpcc_p[2], k_tpcc_x[2], d_rpy[2], k_brot_p[2], k_brot_tc[2];
   // RUN ST
@@ -327,6 +328,8 @@ class Stabilizer
   hrp::Vector3 new_refzmp, rel_cog, ref_zmp_aux, diff_foot_origin_ext_moment;
   hrp::Vector3 pos_ctrl;
   hrp::Vector3 ref_total_force, ref_total_moment;
+  // Total foot moment around the foot origin coords (relative to foot origin coords)
+  hrp::Vector3 ref_total_foot_origin_moment, act_total_foot_origin_moment;
   hrp::Vector3 eefm_swing_pos_damping_gain, eefm_swing_rot_damping_gain;
   double total_mass, transition_time, cop_check_margin, contact_decision_threshold;
   std::vector<double> cp_check_margin, tilt_margin;

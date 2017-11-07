@@ -1,30 +1,26 @@
 // -*- C++ -*-
 /*!
- * @file  ObjectContactTurnaroundDetector.h
- * @brief object contact turnaround detector component
+ * @file  CameraImageSaver.h
+ * @brief camera image saver
  * @date  $Date$
  *
  * $Id$
  */
 
-#ifndef OBJECTCONTACTTURNAROUNDDETECTOR_H
-#define OBJECTCONTACTTURNAROUNDDETECTOR_H
+#ifndef CAMERA_IMAGE_SAVER_H
+#define CAMERA_IMAGE_SAVER_H
 
 #include <rtm/idl/BasicDataType.hh>
-#include <rtm/idl/ExtendedDataTypes.hh>
+#include "hrpsys/idl/Img.hh"
 #include <rtm/Manager.h>
 #include <rtm/DataFlowComponentBase.h>
 #include <rtm/CorbaPort.h>
 #include <rtm/DataInPort.h>
 #include <rtm/DataOutPort.h>
 #include <rtm/idl/BasicDataTypeSkel.h>
-#include <rtm/idl/ExtendedDataTypesSkel.h>
-#include <hrpUtil/Eigen3d.h>
-#include <hrpModel/Body.h>
-#include "ObjectContactTurnaroundDetectorBase.h"
+
 // Service implementation headers
 // <rtc-template block="service_impl_h">
-#include "ObjectContactTurnaroundDetectorService_impl.h"
 
 // </rtc-template>
 
@@ -35,20 +31,30 @@
 
 using namespace RTC;
 
-class ObjectContactTurnaroundDetector
+/**
+   \brief sample RT component which has one data input port and one data output port
+ */
+class CameraImageSaver
   : public RTC::DataFlowComponentBase
 {
  public:
-  ObjectContactTurnaroundDetector(RTC::Manager* manager);
-  virtual ~ObjectContactTurnaroundDetector();
+  /**
+     \brief Constructor
+     \param manager pointer to the Manager
+  */
+  CameraImageSaver(RTC::Manager* manager);
+  /**
+     \brief Destructor
+  */
+  virtual ~CameraImageSaver();
 
   // The initialize action (on CREATED->ALIVE transition)
   // formaer rtc_init_entry()
- virtual RTC::ReturnCode_t onInitialize();
+  virtual RTC::ReturnCode_t onInitialize();
 
   // The finalize action (on ALIVE->END transition)
   // formaer rtc_exiting_entry()
-  virtual RTC::ReturnCode_t onFinalize();
+  // virtual RTC::ReturnCode_t onFinalize();
 
   // The startup action when ExecutionContext startup
   // former rtc_starting_entry()
@@ -90,11 +96,6 @@ class ObjectContactTurnaroundDetector
   // no corresponding operation exists in OpenRTm-aist-0.2.0
   // virtual RTC::ReturnCode_t onRateChanged(RTC::UniqueId ec_id);
 
-  void startObjectContactTurnaroundDetection(const double i_ref_diff_wrench, const double i_max_time, const OpenHRP::ObjectContactTurnaroundDetectorService::StrSequence& i_ee_names);
-  OpenHRP::ObjectContactTurnaroundDetectorService::DetectorMode checkObjectContactTurnaroundDetection();
-  bool setObjectContactTurnaroundDetectorParam(const OpenHRP::ObjectContactTurnaroundDetectorService::objectContactTurnaroundDetectorParam &i_param_);
-  bool getObjectContactTurnaroundDetectorParam(OpenHRP::ObjectContactTurnaroundDetectorService::objectContactTurnaroundDetectorParam& i_param_);
-  bool getObjectForcesMoments(OpenHRP::ObjectContactTurnaroundDetectorService::Dbl3Sequence_out o_forces, OpenHRP::ObjectContactTurnaroundDetectorService::Dbl3Sequence_out o_moments, OpenHRP::ObjectContactTurnaroundDetectorService::DblSequence3_out o_3dofwrench, double& o_fric_coeff_wrench);
 
  protected:
   // Configuration variable declaration
@@ -102,36 +103,27 @@ class ObjectContactTurnaroundDetector
   
   // </rtc-template>
 
+  Img::TimedCameraImage m_image;
+
   // DataInPort declaration
   // <rtc-template block="inport_declare">
-  TimedDoubleSeq m_qCurrent;
-  InPort<TimedDoubleSeq> m_qCurrentIn;
-  std::vector<TimedDoubleSeq> m_force;
-  std::vector<InPort<TimedDoubleSeq> *> m_forceIn;
-  TimedOrientation3D m_rpy;
-  InPort<TimedOrientation3D> m_rpyIn;
-  TimedBooleanSeq m_contactStates;
-  InPort<TimedBooleanSeq> m_contactStatesIn;
+  InPort<Img::TimedCameraImage> m_imageIn;
   
   // </rtc-template>
 
   // DataOutPort declaration
   // <rtc-template block="outport_declare">
-  TimedDoubleSeq m_otdData;
-  OutPort<TimedDoubleSeq> m_otdDataOut;
   
   // </rtc-template>
 
   // CORBA Port declaration
   // <rtc-template block="corbaport_declare">
-  RTC::CorbaPort m_ObjectContactTurnaroundDetectorServicePort;
-
+  
   // </rtc-template>
 
   // Service declaration
   // <rtc-template block="service_declare">
-  ObjectContactTurnaroundDetectorService_impl m_service0;
-
+  
   // </rtc-template>
 
   // Consumer declaration
@@ -140,35 +132,15 @@ class ObjectContactTurnaroundDetector
   // </rtc-template>
 
  private:
-
-  struct ee_trans {
-    std::string target_name, sensor_name;
-    hrp::Vector3 localPos;
-    hrp::Matrix33 localR;
-    size_t index;
-  };
-
-  void updateRootLinkPosRot (TimedOrientation3D tmprpy);
-  void calcFootMidCoords (hrp::Vector3& new_foot_mid_pos, hrp::Matrix33& new_foot_mid_rot);
-  void calcFootOriginCoords (hrp::Vector3& foot_origin_pos, hrp::Matrix33& foot_origin_rot);
-  void calcObjectContactTurnaroundDetectorState();
-
-  std::map<std::string, ee_trans> ee_map;
-  boost::shared_ptr<ObjectContactTurnaroundDetectorBase > otd;
-  std::vector<std::string> otd_sensor_names;
-  hrp::Vector3 otd_axis;
-  double m_dt;
-  hrp::BodyPtr m_robot;
-  coil::Mutex m_mutex;
-  unsigned int m_debugLevel;
+  std::string m_basename;
+  int m_count;
   int dummy;
-  int loop;
 };
 
 
 extern "C"
 {
-  void ObjectContactTurnaroundDetectorInit(RTC::Manager* manager);
+  void CameraImageSaverInit(RTC::Manager* manager);
 };
 
-#endif // OBJECTCONTACTTURNAROUNDDETECTOR_H
+#endif // CAMERA_IMAGE_SAVER_H
