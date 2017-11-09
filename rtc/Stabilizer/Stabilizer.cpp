@@ -1356,8 +1356,8 @@ void Stabilizer::calcStateForEmergencySignal()
         std::cerr << "[" << m_profile.instance_name << "] [" << m_qRef.tm
                   << "] CP too large error, act " << "[" << act_cp(0) << "," << act_cp(1) << "] [m]"
                   << ", rel_act [" << rel_act_cp(0) << "," << rel_act_cp(1) << "] [m]" << std::endl;
-        std::cerr << "[" << m_profile.instance_name << "] [" << m_qRef.tm
-                  << "] support leg: " << support_leg
+        std::cerr << "[" << m_profile.instance_name << "] [" << m_qRef.tm << "] "
+                //<< "] support leg: " << support_leg
                   << ", sbg_cog_offset: " << sbp_cog_offset[0] << " " << sbp_cog_offset[1] << " " << sbp_cog_offset[2] << std::endl;
         if (m_debugLevel > 0) {
             std::cerr << "cp_check_margin: " << cp_check_margin[0] << " " << cp_check_margin[1]
