@@ -802,6 +802,172 @@ void Stabilizer::getActualParameters ()
   hrp::Vector3 foot_origin_pos;
   hrp::Matrix33 foot_origin_rot;
   if (st_algorithm != OpenHRP::StabilizerService::TPCC) {
+    //// add state estimator
+    static std::string   fixed_leg = "";
+    static hrp::Vector3  fixed_limb_pos;
+    static hrp::Matrix33 fixed_limb_rot;
+
+    // update by current joint angles
+    for ( int i = 0; i < m_robot->numJoints(); i++ ){
+      m_robot->joint(i)->q = m_qCurrent.data[i];
+    }
+    if (fixed_leg == "") {
+        // tempolary
+        m_robot->rootLink()->p = hrp::Vector3::Zero();
+        m_robot->calcForwardKinematics();
+        hrp::Sensor* sen = m_robot->sensor<hrp::RateGyroSensor>("gyrometer");
+        hrp::Matrix33 senR = sen->link->R * sen->localR;
+        hrp::Matrix33 act_Rs(hrp::rotFromRpy(m_rpy.data.r, m_rpy.data.p, m_rpy.data.y));
+        m_robot->rootLink()->R = act_Rs * (senR.transpose() * m_robot->rootLink()->R);
+        m_robot->calcForwardKinematics();
+
+        // initialize
+        fixed_leg = "lleg";
+        for (size_t i = 0; i < stikp.size(); i++) {
+            //if (stikp[i].ee_name.find("leg") == std::string::npos) continue;
+            if(stikp[i].ee_name == fixed_leg) {
+                hrp::Link* target = m_robot->sensor<hrp::ForceSensor>(stikp[i].sensor_name)->link;
+                fixed_limb_pos = target->p;
+                fixed_limb_rot = target->R;
+                break;
+            }
+        }
+    } else {
+        m_robot->rootLink()->p = hrp::Vector3::Zero();
+        m_robot->rootLink()->R = hrp::Matrix33::Identity();
+        m_robot->calcForwardKinematics();
+        hrp::Vector3  tmp_limb_pos;
+        hrp::Matrix33 tmp_limb_rot;
+        for (size_t i = 0; i < stikp.size(); i++) {
+            //if (stikp[i].ee_name.find("leg") == std::string::npos) continue;
+            if(stikp[i].ee_name == fixed_leg) {
+                hrp::Link* target = m_robot->sensor<hrp::ForceSensor>(stikp[i].sensor_name)->link;
+                tmp_limb_pos = target->p;
+                tmp_limb_rot = target->R;
+                break;
+            }
+        }
+        double lfz, rfz;
+        for (size_t i = 0; i < stikp.size(); i++) {
+            if(stikp[i].ee_name == "lleg")
+                lfz = - m_wrenches[i].data[2];
+            if(stikp[i].ee_name == "rleg")
+                rfz = - m_wrenches[i].data[2];
+        }
+        hrp::Matrix33 cur_base_rot = fixed_limb_rot * tmp_limb_rot.transpose();
+        hrp::Vector3  cur_base_pos = fixed_limb_pos - cur_base_rot * tmp_limb_pos;
+#if 0
+        {
+            hrp::Vector3 rpy_f = hrp::rpyFromRot(fixed_limb_rot);
+            hrp::Vector3 rpy_b = hrp::rpyFromRot(cur_base_rot);
+
+            std::cerr << "fixed: " << fixed_leg;
+            std::cerr << " / " << lfz << ", " << rfz << std::endl;
+            std::cerr << "f: " << fixed_limb_pos[0];
+            std::cerr << ", "  << fixed_limb_pos[1];
+            std::cerr << ", "  << fixed_limb_pos[2];
+            std::cerr << "/ "  << rpy_f[0];
+            std::cerr << ", "  << rpy_f[1];
+            std::cerr << ", "  << rpy_f[2];
+            std::cerr << std::endl;
+            std::cerr << "b: " << cur_base_pos[0];
+            std::cerr << ", "  << cur_base_pos[1];
+            std::cerr << ", "  << cur_base_pos[2];
+            std::cerr << "/ "  << rpy_b[0];
+            std::cerr << ", "  << rpy_b[1];
+            std::cerr << ", "  << rpy_b[2];
+            std::cerr << std::endl;
+        }
+#endif
+        m_robot->rootLink()->p = cur_base_pos;
+        m_robot->rootLink()->R = cur_base_rot;
+        m_robot->calcForwardKinematics();
+#if 0
+        // check fixed leg pos
+        for (size_t i = 0; i < stikp.size(); i++) {
+            if(stikp[i].ee_name == fixed_leg) {
+                hrp::Link* target = m_robot->sensor<hrp::ForceSensor>(stikp[i].sensor_name)->link;
+                tmp_limb_pos = target->p;
+                tmp_limb_rot = target->R;
+                break;
+            }
+        }
+        {
+            hrp::Vector3 rpy_t = hrp::rpyFromRot(tmp_limb_rot);
+            std::cerr << "t: " << tmp_limb_pos[0];
+            std::cerr << ", "  << tmp_limb_pos[1];
+            std::cerr << ", "  << tmp_limb_pos[2];
+            std::cerr << "/ "  << rpy_t[0];
+            std::cerr << ", "  << rpy_t[1];
+            std::cerr << ", "  << rpy_t[2];
+            std::cerr << std::endl;
+        }
+#endif
+        //
+        // cur_base_rpy vs act_rpy
+        // diff should be from diff between act angle and potentio angle
+        //
+        if (fixed_leg == "rleg") {
+            if (lfz > rfz) {
+                // switch
+                fixed_leg = "lleg";
+                for (size_t i = 0; i < stikp.size(); i++) {
+                    //if (stikp[i].ee_name.find("leg") == std::string::npos) continue;
+                    if(stikp[i].ee_name == fixed_leg) {
+                        hrp::Link* target = m_robot->sensor<hrp::ForceSensor>(stikp[i].sensor_name)->link;
+                        fixed_limb_pos = target->p;
+                        fixed_limb_rot = target->R;
+                        break;
+                    }
+                }
+#if 0
+                {
+                    hrp::Vector3 rpy_f = hrp::rpyFromRot(fixed_limb_rot);
+
+                    std::cerr << "switched: " << fixed_leg;
+                    std::cerr << std::endl;
+                    std::cerr << "f: " << fixed_limb_pos[0];
+                    std::cerr << ", "  << fixed_limb_pos[1];
+                    std::cerr << ", "  << fixed_limb_pos[2];
+                    std::cerr << "/ "  << rpy_f[0];
+                    std::cerr << ", "  << rpy_f[1];
+                    std::cerr << ", "  << rpy_f[2];
+                    std::cerr << std::endl;
+                }
+#endif
+            }
+        } else {
+            if (lfz < rfz) {
+                fixed_leg = "rleg";
+                for (size_t i = 0; i < stikp.size(); i++) {
+                    //if (stikp[i].ee_name.find("leg") == std::string::npos) continue;
+                    if(stikp[i].ee_name == fixed_leg) {
+                        hrp::Link* target = m_robot->sensor<hrp::ForceSensor>(stikp[i].sensor_name)->link;
+                        fixed_limb_pos = target->p;
+                        fixed_limb_rot = target->R;
+                        break;
+                    }
+                }
+#if 0
+                {
+                    hrp::Vector3 rpy_f = hrp::rpyFromRot(fixed_limb_rot);
+
+                    std::cerr << "switched: " << fixed_leg;
+                    std::cerr << std::endl;
+                    std::cerr << "f: " << fixed_limb_pos[0];
+                    std::cerr << ", "  << fixed_limb_pos[1];
+                    std::cerr << ", "  << fixed_limb_pos[2];
+                    std::cerr << "/ "  << rpy_f[0];
+                    std::cerr << ", "  << rpy_f[1];
+                    std::cerr << ", "  << rpy_f[2];
+                    std::cerr << std::endl;
+                }
+#endif
+            }
+        }
+    }
+    ////
+
     // update by current joint angles
     for ( int i = 0; i < m_robot->numJoints(); i++ ){
       m_robot->joint(i)->q = m_qCurrent.data[i];
