@@ -2,6 +2,8 @@
 # docker build -f <this_file> -t jsk_private/hrpsys:16.04 .
 FROM yoheikakiuchi/choreonoid:latest
 
+SHELL ["/bin/bash", "-c"]
+
 ENV MY_ROSWORKSPACE /hrpsys_ws
 #ENV HRPSYS_PARENT_SETUP /opt/ros/$ROS_DISTRO/setup.bash
 ENV HRPSYS_PARENT_SETUP /choreonoid_ws/devel/setup.bash
